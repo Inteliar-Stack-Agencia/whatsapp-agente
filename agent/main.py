@@ -84,20 +84,29 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
         if len(partes) == 5:
             nombre, telefono_cita, dispositivo, fecha, hora = [p.strip() for p in partes]
     else:
-        # Intentar formato JSON
+        # Intentar formato JSON (muy flexible)
         patron_json = r'\[CITA:\s*(.*?)\]'
         match = re.search(patron_json, respuesta, re.DOTALL)
         if match:
             datos_raw = match.group(1)
-            # Parsear key="value" format (con comas o sin)
-            nombre_match = re.search(r'nombre="([^"]*)"', datos_raw)
-            # Aceptar "telefono" o "contacto"
-            tel_match = re.search(r'(?:telefono|contacto)="([^"]*)"', datos_raw)
-            disp_match = re.search(r'dispositivo="([^"]*)"', datos_raw)
-            # Aceptar "problema" o "problema"
-            prob_match = re.search(r'problema="([^"]*)"', datos_raw)
-            fecha_match = re.search(r'fecha="([^"]*)"', datos_raw)
-            hora_match = re.search(r'hora="([^"]*)"', datos_raw)
+
+            # Buscar nombre (aceptar "nombre" o "cliente")
+            nombre_match = re.search(r'(?:nombre|cliente)\s*=\s*["\']?([^"\',\[\]]+)["\']?', datos_raw)
+
+            # Buscar teléfono (aceptar "telefono", "contacto" o "teléfono")
+            tel_match = re.search(r'(?:telefono|contacto|teléfono)\s*=\s*["\']?([^"\',\[\]]+)["\']?', datos_raw)
+
+            # Buscar dispositivo
+            disp_match = re.search(r'dispositivo\s*=\s*["\']?([^"\',\[\]]+)["\']?', datos_raw)
+
+            # Buscar problema
+            prob_match = re.search(r'problema\s*=\s*["\']?([^"\',\[\]]+)["\']?', datos_raw)
+
+            # Buscar fecha
+            fecha_match = re.search(r'fecha\s*=\s*["\']?(\d{4}-\d{2}-\d{2})["\']?', datos_raw)
+
+            # Buscar hora
+            hora_match = re.search(r'hora\s*=\s*["\']?(\d{2}:\d{2})["\']?', datos_raw)
 
             if all([nombre_match, tel_match, disp_match, prob_match, fecha_match, hora_match]):
                 nombre = nombre_match.group(1).strip()
