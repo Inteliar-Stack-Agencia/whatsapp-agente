@@ -18,6 +18,9 @@ logger = logging.getLogger("agentkit")
 # Cliente de Anthropic
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+# Importar función de detección de tipos de pregunta
+from agent.tools import detectar_tipo_pregunta
+
 
 def obtener_agente_activo() -> str:
     """Retorna el nombre del agente activo desde variables de entorno."""
@@ -70,6 +73,12 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
         return obtener_mensaje_fallback()
 
     system_prompt = cargar_system_prompt()
+
+    # Detectar tipo de pregunta y enriquecer el system prompt
+    tipo_pregunta, instruccion_extra = detectar_tipo_pregunta(mensaje)
+    if instruccion_extra:
+        system_prompt += f"\n\n## Instrucción especial para esta pregunta\nTipo detectado: {tipo_pregunta}\n{instruccion_extra}"
+        logger.info(f"Sistema enriquecido con instrucción para pregunta tipo: {tipo_pregunta}")
 
     # Construir mensajes para la API
     mensajes = []

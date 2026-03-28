@@ -71,6 +71,44 @@ def buscar_en_knowledge(consulta: str) -> str:
     return "No encontré información específica sobre eso en mis archivos."
 
 
+def detectar_tipo_pregunta(mensaje: str) -> tuple[str, str]:
+    """
+    Detecta el tipo de pregunta según los filtros configurados en prompts.yaml.
+    Lee la configuración del agente activo y busca coincidencias con keywords.
+
+    Retorna (tipo_detectado: str, instruccion_extra: str).
+    Si no hay coincidencia, retorna ("general", "").
+    """
+    agente = obtener_agente_activo()
+    ruta = f"config/{agente}/prompts.yaml"
+
+    try:
+        with open(ruta, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.warning(f"No se pudo cargar {ruta} para detectar tipo de pregunta")
+        return "general", ""
+
+    # Obtener los filtros configurados para este agente
+    filtros = config.get("filtros", {})
+    if not filtros:
+        return "general", ""
+
+    mensaje_lower = mensaje.lower()
+
+    # Buscar el primer tipo que coincida con los keywords
+    for tipo, cfg in filtros.items():
+        keywords = cfg.get("keywords", [])
+        instruccion = cfg.get("instruccion_extra", "")
+
+        # Verificar si alguna keyword está en el mensaje
+        if any(k in mensaje_lower for k in keywords):
+            logger.info(f"Tipo de pregunta detectado: {tipo}")
+            return tipo, instruccion
+
+    return "general", ""
+
+
 # ════════════════════════════════════════════════════════════
 # Herramientas específicas para Mundo Electronico
 # ════════════════════════════════════════════════════════════
