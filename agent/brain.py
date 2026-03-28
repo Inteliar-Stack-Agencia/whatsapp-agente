@@ -2,15 +2,21 @@
 # Generado por AgentKit
 
 """
-Lógica de IA del agente. Lee el system prompt de prompts.yaml
-y genera respuestas usando la API de Anthropic Claude.
+Lógica de IA del agente. Lee el system prompt de:
+1. Supabase (ai_prompts) si está configurado
+2. config/prompts.yaml como fallback local
+
+Genera respuestas usando la API de Anthropic Claude.
 """
 
 import os
 import yaml
 import logging
 from anthropic import AsyncAnthropic
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
+from agent.supabase_client import obtener_config_cliente, is_supabase_enabled
 
 load_dotenv()
 logger = logging.getLogger("agentkit")
@@ -18,52 +24,64 @@ logger = logging.getLogger("agentkit")
 # Cliente de Anthropic
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# Importar funciones de herramientas
-from agent.tools import detectar_tipo_pregunta, consultar_precios
 
-
-def obtener_agente_activo() -> str:
-    """Retorna el nombre del agente activo desde variables de entorno."""
-    return os.getenv("AGENTE_ACTIVO", "default")
-
-
-def cargar_config_prompts() -> dict:
-    """Lee toda la configuración desde config/{AGENTE_ACTIVO}/prompts.yaml."""
-    agente = obtener_agente_activo()
-    ruta = f"config/{agente}/prompts.yaml"
+def cargar_config_prompts_local() -> dict:
+    """Lee configuración desde config/prompts.yaml (fallback local)."""
     try:
-        with open(ruta, "r", encoding="utf-8") as f:
+        with open("config/prompts.yaml", "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except FileNotFoundError:
-        logger.error(f"{ruta} no encontrado")
+        logger.warning("config/prompts.yaml no encontrado")
         return {}
 
 
-def cargar_system_prompt() -> str:
-    """Lee el system prompt desde config/prompts.yaml."""
-    config = cargar_config_prompts()
+async def obtener_system_prompt(client_id: str = None) -> str:
+    """
+    Obtiene el system prompt del bot desde:
+    1. Supabase (ai_prompts) si client_id se proporciona
+    2. config/prompts.yaml como fallback
+
+    Args:
+        client_id: UUID del cliente en Supabase (opcional)
+
+    Returns:
+        System prompt personalizado para el bot
+    """
+    # Si Supabase está disponible y tenemos client_id, intentar desde ahí
+    if is_supabase_enabled() and client_id:
+        try:
+            config = await obtener_config_cliente(client_id)
+            if config and config.get("system_prompt"):
+                logger.info(f"System prompt cargado desde Supabase para cliente {client_id}")
+                return config["system_prompt"]
+        except Exception as e:
+            logger.warning(f"Error obteniendo config de Supabase: {e}, usando fallback local")
+
+    # Fallback: leer desde archivo local
+    config = cargar_config_prompts_local()
     return config.get("system_prompt", "Eres un asistente útil. Responde en español.")
 
 
 def obtener_mensaje_error() -> str:
-    """Retorna el mensaje de error configurado en prompts.yaml."""
-    config = cargar_config_prompts()
+    """Retorna el mensaje de error configurado."""
+    config = cargar_config_prompts_local()
     return config.get("error_message", "Lo siento, estoy teniendo problemas técnicos. Por favor intenta de nuevo en unos minutos.")
 
 
 def obtener_mensaje_fallback() -> str:
-    """Retorna el mensaje de fallback configurado en prompts.yaml."""
-    config = cargar_config_prompts()
+    """Retorna el mensaje de fallback configurado."""
+    config = cargar_config_prompts_local()
     return config.get("fallback_message", "Disculpa, no entendí tu mensaje. ¿Podrías reformularlo?")
 
 
-async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
+async def generar_respuesta(mensaje: str, historial: list[dict], client_id: str = None) -> str:
     """
     Genera una respuesta usando Claude API.
 
     Args:
         mensaje: El mensaje nuevo del usuario
         historial: Lista de mensajes anteriores [{"role": "user/assistant", "content": "..."}]
+        client_id: UUID del cliente en Supabase (opcional)
 
     Returns:
         La respuesta generada por Claude
@@ -72,28 +90,12 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     if not mensaje or len(mensaje.strip()) < 2:
         return obtener_mensaje_fallback()
 
-    system_prompt = cargar_system_prompt()
+    system_prompt = await obtener_system_prompt(client_id)
 
     # Agregar fecha de hoy para que Claude pueda convertir "mañana", "próximo lunes", etc.
-    from datetime import datetime, timedelta
     hoy = datetime.utcnow()
     mañana = (hoy + timedelta(days=1)).strftime("%Y-%m-%d")
-    system_prompt += f"\n\n## Información de contexto\nFecha de hoy: {hoy.strftime('%Y-%m-%d')} ({hoy.strftime('%A')})\nMañana será: {mañana}\nCuando el cliente mencione fechas relativas (mañana, pasado mañana, próximo lunes, etc.), CONVIERTE siempre a formato ISO (YYYY-MM-DD) para el tag [CITA]."
-
-    # Detectar tipo de pregunta y enriquecer el system prompt
-    tipo_pregunta, instruccion_extra = detectar_tipo_pregunta(mensaje)
-    if instruccion_extra:
-        system_prompt += f"\n\n## Instrucción especial para esta pregunta\nTipo detectado: {tipo_pregunta}\n{instruccion_extra}"
-        logger.info(f"Sistema enriquecido con instrucción para pregunta tipo: {tipo_pregunta}")
-
-    # Si la pregunta es sobre reparación o accesorios, inyectar catálogo de precios
-    if tipo_pregunta in ["reparacion", "accesorios"]:
-        precios = consultar_precios()
-        if precios:
-            # Convertir precios a formato legible para Claude
-            precios_formateado = yaml.dump(precios, allow_unicode=True, default_flow_style=False)
-            system_prompt += f"\n\n## CATÁLOGO DE PRECIOS DISPONIBLES\nUsados para responder consultas de precios:\n\n{precios_formateado}\n**IMPORTANTE:** Si el cliente pregunta por un precio que tienes en el catálogo, responde con el precio. Si no está en el catálogo, di que confirmamos el precio exacto al traer el dispositivo."
-            logger.info(f"Catálogo de precios inyectado en system_prompt para pregunta tipo: {tipo_pregunta}")
+    system_prompt += f"\n\n## Información de contexto\nFecha de hoy: {hoy.strftime('%Y-%m-%d')} ({hoy.strftime('%A')})\nMañana será: {mañana}\nCuando el cliente mencione fechas relativas (mañana, pasado mañana, próximo lunes, etc.), CONVIERTE siempre a formato ISO (YYYY-MM-DD)."
 
     # Construir mensajes para la API
     mensajes = []

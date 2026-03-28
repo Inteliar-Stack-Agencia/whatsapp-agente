@@ -18,6 +18,7 @@ from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
 from agent.tools import crear_evento_calendario, detectar_tipo_pregunta, crear_ticket_desde_cita, buscar_estado_reparacion
+from agent.supabase_client import obtener_cliente_por_telefono, is_supabase_enabled
 from agent.admin import admin_router
 
 load_dotenv()
@@ -118,7 +119,7 @@ async def extraer_datos_confirmacion(respuesta: str) -> dict:
     return datos
 
 
-async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
+async def procesar_cita_si_existe(respuesta: str, telefono: str, client_id: str = None) -> str:
     """
     Detecta si la respuesta contiene un bloque [CITA]...[/CITA].
     Si existe, crea:
@@ -202,7 +203,7 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
 
         # Crear ticket de soporte
         try:
-            ticket_numero = await crear_ticket_desde_cita(nombre, telefono_cita, dispositivo, "Reparación agendada")
+            ticket_numero = await crear_ticket_desde_cita(nombre, telefono_cita, dispositivo, "Reparación agendada", client_id=client_id)
             logger.info(f"Ticket creado: {ticket_numero}")
         except Exception as e:
             logger.error(f"Error creando ticket: {e}")
@@ -260,22 +261,28 @@ async def webhook_handler(request: Request):
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
+            # Obtener el cliente de Supabase si está disponible
+            client_id = None
+            if is_supabase_enabled():
+                cliente = await obtener_cliente_por_telefono(msg.telefono)
+                client_id = cliente.get("id") if cliente else None
+                if client_id:
+                    logger.info(f"Cliente encontrado: {cliente.get('name')} ({client_id})")
+                else:
+                    logger.warning(f"Cliente no encontrado para teléfono {msg.telefono}")
+
             # Obtener historial ANTES de guardar el mensaje actual
-            # (brain.py agrega el mensaje actual, evitando duplicados)
-            historial = await obtener_historial(msg.telefono)
+            historial = await obtener_historial(msg.telefono, client_id=client_id)
 
             # Generar respuesta con Claude
-            respuesta = await generar_respuesta(msg.texto, historial)
+            respuesta = await generar_respuesta(msg.texto, historial, client_id=client_id)
 
             # Procesar cita si existe en la respuesta (detectar tag [CITA] y crear en Google Calendar + Ticket)
-            respuesta = await procesar_cita_si_existe(respuesta, msg.telefono)
-
-            # Enriquecer respuesta si es pregunta de soporte (agregar estado de tickets)
-            respuesta = await enriquecer_respuesta_soporte(respuesta, msg.telefono, msg.texto)
+            respuesta = await procesar_cita_si_existe(respuesta, msg.telefono, client_id=client_id)
 
             # Guardar mensaje del usuario Y respuesta del agente en memoria
-            await guardar_mensaje(msg.telefono, "user", msg.texto)
-            await guardar_mensaje(msg.telefono, "assistant", respuesta)
+            await guardar_mensaje(msg.telefono, "user", msg.texto, client_id=client_id)
+            await guardar_mensaje(msg.telefono, "assistant", respuesta, client_id=client_id)
 
             # Enviar respuesta por WhatsApp via el proveedor
             await proveedor.enviar_mensaje(msg.telefono, respuesta)

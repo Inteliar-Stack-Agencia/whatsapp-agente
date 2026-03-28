@@ -261,14 +261,21 @@ Te esperamos en nuestro local. ¡Gracias por tu confianza! 🙏
 # FUNCIONES PARA SISTEMA DE TICKETS (PHASE 5)
 # ════════════════════════════════════════════════════════════
 
-async def crear_ticket_desde_cita(nombre: str, telefono: str, dispositivo: str, problema: str) -> str:
+async def crear_ticket_desde_cita(nombre: str, telefono: str, dispositivo: str, problema: str, client_id: str = None) -> str:
     """
     Crea un ticket de soporte cuando se agenda una cita.
     Retorna el número de ticket.
     """
     from agent.memory import crear_ticket
     agente = obtener_agente_activo()
-    ticket_numero = await crear_ticket(telefono, nombre, dispositivo, problema, agente)
+    ticket_numero = await crear_ticket(
+        nombre=nombre,
+        telefono=telefono,
+        dispositivo=dispositivo,
+        problema=problema,
+        client_id=client_id,
+        agente=agente
+    )
     logger.info(f"Ticket creado: {ticket_numero}")
     return ticket_numero
 

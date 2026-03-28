@@ -19,7 +19,11 @@
       "Edit",
       "Glob",
       "Grep",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:github.com)",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__apply_migration"
     ]
   }
 }

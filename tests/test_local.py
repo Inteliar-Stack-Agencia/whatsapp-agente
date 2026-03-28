@@ -20,7 +20,7 @@ if sys.platform == "win32":
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.brain import generar_respuesta
-from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, limpiar_historial, buscar_tickets_por_telefono
+from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, limpiar_historial, obtener_tickets_por_telefono
 from agent.tools import detectar_tipo_pregunta, crear_ticket_desde_cita
 import re
 import asyncio as aio
@@ -72,14 +72,9 @@ async def main():
             continue
 
         if mensaje.lower() == "tickets":
-            tickets = await buscar_tickets_por_telefono(TELEFONO_TEST)
-            if not tickets:
-                print("[No hay tickets registrados]\n")
-            else:
-                print("\n[Tus tickets:]")
-                for t in tickets:
-                    print(f"  • {t['ticket_numero']} — {t['dispositivo']} ({t['estado']})")
-                print()
+            # En modo local sin Supabase, los tickets no persisten
+            print("[Nota: En modo local sin Supabase, los tickets no se guardan]")
+            print("[Para ver tickets, configura SUPABASE_URL y SUPABASE_KEY en .env]\n")
             continue
 
         if mensaje.lower().startswith("crear ticket"):
