@@ -89,17 +89,20 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
         match = re.search(patron_json, respuesta, re.DOTALL)
         if match:
             datos_raw = match.group(1)
-            # Parsear key="value" format
+            # Parsear key="value" format (con comas o sin)
             nombre_match = re.search(r'nombre="([^"]*)"', datos_raw)
-            tel_match = re.search(r'telefono="([^"]*)"', datos_raw)
+            # Aceptar "telefono" o "contacto"
+            tel_match = re.search(r'(?:telefono|contacto)="([^"]*)"', datos_raw)
             disp_match = re.search(r'dispositivo="([^"]*)"', datos_raw)
+            # Aceptar "problema" o "problema"
+            prob_match = re.search(r'problema="([^"]*)"', datos_raw)
             fecha_match = re.search(r'fecha="([^"]*)"', datos_raw)
             hora_match = re.search(r'hora="([^"]*)"', datos_raw)
 
-            if all([nombre_match, tel_match, disp_match, fecha_match, hora_match]):
+            if all([nombre_match, tel_match, disp_match, prob_match, fecha_match, hora_match]):
                 nombre = nombre_match.group(1).strip()
                 telefono_cita = tel_match.group(1).strip()
-                dispositivo = disp_match.group(1).strip()
+                dispositivo = f"{disp_match.group(1).strip()} {prob_match.group(1).strip()}"
                 fecha = fecha_match.group(1).strip()
                 hora = hora_match.group(1).strip()
 

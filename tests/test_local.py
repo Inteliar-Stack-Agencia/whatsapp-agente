@@ -113,20 +113,22 @@ async def main():
             if len(datos) == 5:
                 nombre, telefono_cita, dispositivo, fecha, hora = [d.strip() for d in datos]
         else:
-            # Intentar formato JSON: [CITA: nombre="...", telefono="...", ...]
+            # Intentar formato JSON: [CITA: nombre="...", telefono/contacto="...", ...]
             patron_json = r'\[CITA:\s*(.*?)\]'
             match = re.search(patron_json, respuesta)
             if match:
                 datos_raw = match.group(1)
                 nombre_m = re.search(r'nombre="([^"]*)"', datos_raw)
-                tel_m = re.search(r'telefono="([^"]*)"', datos_raw)
+                # Aceptar "telefono" o "contacto"
+                tel_m = re.search(r'(?:telefono|contacto)="([^"]*)"', datos_raw)
                 disp_m = re.search(r'dispositivo="([^"]*)"', datos_raw)
+                prob_m = re.search(r'problema="([^"]*)"', datos_raw)
                 fecha_m = re.search(r'fecha="([^"]*)"', datos_raw)
                 hora_m = re.search(r'hora="([^"]*)"', datos_raw)
-                if all([nombre_m, tel_m, disp_m, fecha_m, hora_m]):
+                if all([nombre_m, tel_m, disp_m, prob_m, fecha_m, hora_m]):
                     nombre = nombre_m.group(1).strip()
                     telefono_cita = tel_m.group(1).strip()
-                    dispositivo = disp_m.group(1).strip()
+                    dispositivo = f"{disp_m.group(1).strip()} {prob_m.group(1).strip()}"
                     fecha = fecha_m.group(1).strip()
                     hora = hora_m.group(1).strip()
 
