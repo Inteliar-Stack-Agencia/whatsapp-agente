@@ -15,8 +15,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Obtener el agente activo
+AGENTE_ACTIVO = os.getenv("AGENTE_ACTIVO", "default")
+
 # Configuración de base de datos
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./agentkit.db")
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///./data/{AGENTE_ACTIVO}/agentkit.db")
+
+# Crear el directorio de datos si no existe (para SQLite local)
+if DATABASE_URL.startswith("sqlite"):
+    data_dir = f"./data/{AGENTE_ACTIVO}"
+    os.makedirs(data_dir, exist_ok=True)
 
 # Si es PostgreSQL en producción, ajustar el esquema de URL
 if DATABASE_URL.startswith("postgresql://"):

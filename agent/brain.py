@@ -19,13 +19,20 @@ logger = logging.getLogger("agentkit")
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
+def obtener_agente_activo() -> str:
+    """Retorna el nombre del agente activo desde variables de entorno."""
+    return os.getenv("AGENTE_ACTIVO", "default")
+
+
 def cargar_config_prompts() -> dict:
-    """Lee toda la configuración desde config/prompts.yaml."""
+    """Lee toda la configuración desde config/{AGENTE_ACTIVO}/prompts.yaml."""
+    agente = obtener_agente_activo()
+    ruta = f"config/{agente}/prompts.yaml"
     try:
-        with open("config/prompts.yaml", "r", encoding="utf-8") as f:
+        with open(ruta, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except FileNotFoundError:
-        logger.error("config/prompts.yaml no encontrado")
+        logger.error(f"{ruta} no encontrado")
         return {}
 
 

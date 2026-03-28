@@ -15,13 +15,20 @@ from datetime import datetime
 logger = logging.getLogger("agentkit")
 
 
+def obtener_agente_activo() -> str:
+    """Retorna el nombre del agente activo desde variables de entorno."""
+    return os.getenv("AGENTE_ACTIVO", "default")
+
+
 def cargar_info_negocio() -> dict:
-    """Carga la información del negocio desde business.yaml."""
+    """Carga la información del negocio desde config/{AGENTE_ACTIVO}/business.yaml."""
+    agente = obtener_agente_activo()
+    ruta = f"config/{agente}/business.yaml"
     try:
-        with open("config/business.yaml", "r", encoding="utf-8") as f:
+        with open(ruta, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
     except FileNotFoundError:
-        logger.error("config/business.yaml no encontrado")
+        logger.error(f"{ruta} no encontrado")
         return {}
 
 
@@ -36,11 +43,12 @@ def obtener_horario() -> dict:
 
 def buscar_en_knowledge(consulta: str) -> str:
     """
-    Busca información relevante en los archivos de /knowledge.
+    Busca información relevante en los archivos de knowledge/{AGENTE_ACTIVO}.
     Retorna el contenido más relevante encontrado.
     """
     resultados = []
-    knowledge_dir = "knowledge"
+    agente = obtener_agente_activo()
+    knowledge_dir = f"knowledge/{agente}"
 
     if not os.path.exists(knowledge_dir):
         return "No hay archivos de conocimiento disponibles."
