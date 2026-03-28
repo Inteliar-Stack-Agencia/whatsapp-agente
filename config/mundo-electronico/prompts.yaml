@@ -190,7 +190,30 @@ filtros:
       - "puedo pasar"
       - "paso mañana"
       - "tengo disponibilidad"
-    instruccion_extra: "Solicita nombre completo, número de teléfono, modelo del dispositivo y horario preferido para agendar. Confirma que pueden asistir en horario de atención."
+    instruccion_extra: |
+      Recopila estos datos del cliente en múltiples mensajes si es necesario:
+      1. Nombre completo
+      2. Número de teléfono (formato: 549... o similar)
+      3. Dispositivo a reparar y el problema específico
+      4. Fecha preferida (en formato YYYY-MM-DD, ej: 2026-03-29)
+      5. Hora preferida (en formato HH:MM, ej: 15:00)
+
+      IMPORTANTE: Solo cuando hayas CONFIRMADO todos estos 5 datos con el cliente, incluye
+      exactamente al FINAL de tu respuesta (no lo menciones, es invisible para el cliente):
+
+      [CITA]nombre completo|teléfono|dispositivo-problema|YYYY-MM-DD|HH:MM[/CITA]
+
+      Ejemplo completo:
+      "Perfecto Juan! Te agendé para el martes 29 de marzo a las 15:00.
+      [CITA]Juan Pérez|5491165689145|iPhone 14 pantalla rota|2026-03-29|15:00[/CITA]"
+
+      Reglas:
+      - El tag SOLO va al final de la respuesta
+      - Usa el número de teléfono exacto que el cliente te dió
+      - Fecha en YYYY-MM-DD (ISO format)
+      - Hora en HH:MM (24h format)
+      - Solo incluye el tag cuando el cliente CONFIRMÓ todos los datos
+      - Si es fuera del horario (L-V 11-19, Sáb 11-14), propone un horario válido
 
   horario:
     keywords:

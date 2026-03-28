@@ -10,7 +10,8 @@ Claude Code genera las funciones según los casos de uso elegidos en la entrevis
 import os
 import yaml
 import logging
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("agentkit")
 
@@ -125,6 +126,75 @@ def detectar_tipo_pregunta(mensaje: str) -> tuple[str, str]:
             return tipo, instruccion
 
     return "general", ""
+
+
+async def crear_evento_calendario(nombre: str, telefono: str, dispositivo: str,
+                                   fecha: str, hora: str) -> bool:
+    """
+    Crea un evento en Google Calendar para la cita del cliente.
+    Requiere variables de entorno: GOOGLE_CALENDAR_CREDENTIALS y GOOGLE_CALENDAR_ID
+    Retorna True si fue exitoso, False si no hay credenciales o hubo error.
+    """
+    credentials_json = os.getenv("GOOGLE_CALENDAR_CREDENTIALS")
+    calendar_id = os.getenv("GOOGLE_CALENDAR_ID")
+
+    if not credentials_json or not calendar_id:
+        logger.warning("Google Calendar no configurado — cita no creada en calendario")
+        return False
+
+    try:
+        # Importar Google libraries (solo si están configuradas)
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+
+        # Parsear credenciales
+        credentials_dict = json.loads(credentials_json)
+        credentials = service_account.Credentials.from_service_account_info(
+            credentials_dict,
+            scopes=["https://www.googleapis.com/auth/calendar"]
+        )
+
+        # Construir cliente de Google Calendar
+        service = build("calendar", "v3", credentials=credentials)
+
+        # Crear timestamps
+        inicio = f"{fecha}T{hora}:00"
+        dt_inicio = datetime.fromisoformat(inicio)
+        dt_fin = dt_inicio + timedelta(hours=1)
+        fin = dt_fin.isoformat()
+
+        # Obtener info del negocio para el evento
+        agente = obtener_agente_activo()
+        info = cargar_info_negocio()
+        nombre_negocio = info.get("negocio", {}).get("nombre", agente)
+
+        # Estructura del evento
+        evento = {
+            "summary": f"Cita - {dispositivo} ({nombre})",
+            "description": (
+                f"Cliente: {nombre}\n"
+                f"Teléfono: {telefono}\n"
+                f"Dispositivo: {dispositivo}\n"
+                f"Agendado via {nombre_negocio} Bot"
+            ),
+            "start": {
+                "dateTime": inicio,
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "end": {
+                "dateTime": fin,
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+        }
+
+        # Insertar evento en Google Calendar
+        service.events().insert(calendarId=calendar_id, body=evento).execute()
+        logger.info(f"Evento creado en Google Calendar: {nombre} - {fecha} {hora}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error Google Calendar: {e}")
+        return False
 
 
 # ════════════════════════════════════════════════════════════

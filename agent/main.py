@@ -7,6 +7,7 @@ Funciona con cualquier proveedor (Whapi, Meta, Twilio) gracias a la capa de prov
 """
 
 import os
+import re
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
+from agent.tools import crear_evento_calendario
 
 load_dotenv()
 
@@ -53,6 +55,40 @@ async def health_check():
     return {"status": "ok", "service": "agentkit"}
 
 
+async def procesar_cita_si_existe(respuesta: str) -> str:
+    """
+    Detecta si la respuesta contiene un bloque [CITA]...[/CITA].
+    Si existe, crea el evento en Google Calendar y elimina el tag del texto visible.
+
+    Formato esperado: [CITA]nombre|teléfono|dispositivo|YYYY-MM-DD|HH:MM[/CITA]
+    """
+    patron = r'\[CITA\](.*?)\[/CITA\]'
+    match = re.search(patron, respuesta, re.DOTALL)
+
+    if not match:
+        return respuesta
+
+    datos_raw = match.group(1).strip()
+    partes = datos_raw.split("|")
+
+    # Validar que tenemos los 5 datos esperados
+    if len(partes) == 5:
+        nombre, telefono, dispositivo, fecha, hora = partes
+        exito = await crear_evento_calendario(
+            nombre.strip(),
+            telefono.strip(),
+            dispositivo.strip(),
+            fecha.strip(),
+            hora.strip()
+        )
+        if exito:
+            logger.info(f"Cita agendada en Google Calendar: {nombre}")
+
+    # Eliminar el tag del texto visible al cliente
+    respuesta_limpia = re.sub(patron, "", respuesta, flags=re.DOTALL).strip()
+    return respuesta_limpia
+
+
 @app.get("/webhook")
 async def webhook_verificacion(request: Request):
     """Verificación GET del webhook (requerido por Meta Cloud API, no-op para otros)."""
@@ -85,6 +121,9 @@ async def webhook_handler(request: Request):
 
             # Generar respuesta con Claude
             respuesta = await generar_respuesta(msg.texto, historial)
+
+            # Procesar cita si existe en la respuesta (detectar tag [CITA] y crear en Google Calendar)
+            respuesta = await procesar_cita_si_existe(respuesta)
 
             # Guardar mensaje del usuario Y respuesta del agente en memoria
             await guardar_mensaje(msg.telefono, "user", msg.texto)
