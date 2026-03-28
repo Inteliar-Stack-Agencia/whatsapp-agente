@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
-from agent.tools import crear_evento_calendario
+from agent.tools import crear_evento_calendario, detectar_tipo_pregunta, crear_ticket_desde_cita, buscar_estado_reparacion
 
 load_dotenv()
 
@@ -55,10 +55,13 @@ async def health_check():
     return {"status": "ok", "service": "agentkit"}
 
 
-async def procesar_cita_si_existe(respuesta: str) -> str:
+async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
     """
     Detecta si la respuesta contiene un bloque [CITA]...[/CITA].
-    Si existe, crea el evento en Google Calendar y elimina el tag del texto visible.
+    Si existe, crea:
+    1. Evento en Google Calendar
+    2. Ticket de soporte/reparación en la base de datos
+    Elimina el tag del texto visible.
 
     Formato esperado: [CITA]nombre|teléfono|dispositivo|YYYY-MM-DD|HH:MM[/CITA]
     """
@@ -73,20 +76,49 @@ async def procesar_cita_si_existe(respuesta: str) -> str:
 
     # Validar que tenemos los 5 datos esperados
     if len(partes) == 5:
-        nombre, telefono, dispositivo, fecha, hora = partes
-        exito = await crear_evento_calendario(
-            nombre.strip(),
-            telefono.strip(),
-            dispositivo.strip(),
-            fecha.strip(),
-            hora.strip()
-        )
-        if exito:
+        nombre, telefono_cita, dispositivo, fecha, hora = partes
+        nombre = nombre.strip()
+        telefono_cita = telefono_cita.strip()
+        dispositivo = dispositivo.strip()
+        fecha = fecha.strip()
+        hora = hora.strip()
+
+        # Crear evento en Google Calendar
+        exito_cal = await crear_evento_calendario(nombre, telefono_cita, dispositivo, fecha, hora)
+        if exito_cal:
             logger.info(f"Cita agendada en Google Calendar: {nombre}")
+
+        # Crear ticket de soporte
+        try:
+            ticket_numero = await crear_ticket_desde_cita(nombre, telefono_cita, dispositivo, "Reparación agendada")
+            logger.info(f"Ticket creado: {ticket_numero}")
+        except Exception as e:
+            logger.error(f"Error creando ticket: {e}")
 
     # Eliminar el tag del texto visible al cliente
     respuesta_limpia = re.sub(patron, "", respuesta, flags=re.DOTALL).strip()
     return respuesta_limpia
+
+
+async def enriquecer_respuesta_soporte(respuesta: str, telefono: str, mensaje: str) -> str:
+    """
+    Si la pregunta es sobre soporte/estado de reparación,
+    agrega el contexto de los tickets del cliente a la respuesta.
+    """
+    tipo_pregunta, _ = detectar_tipo_pregunta(mensaje)
+
+    if tipo_pregunta != "soporte":
+        return respuesta
+
+    try:
+        estado_tickets = await buscar_estado_reparacion(telefono, mensaje)
+        # Agregar información de tickets al final de la respuesta
+        respuesta += f"\n\n{estado_tickets}"
+        logger.info(f"Respuesta enriquecida con información de tickets para {telefono}")
+    except Exception as e:
+        logger.error(f"Error enriqueciendo respuesta con tickets: {e}")
+
+    return respuesta
 
 
 @app.get("/webhook")
@@ -122,8 +154,11 @@ async def webhook_handler(request: Request):
             # Generar respuesta con Claude
             respuesta = await generar_respuesta(msg.texto, historial)
 
-            # Procesar cita si existe en la respuesta (detectar tag [CITA] y crear en Google Calendar)
-            respuesta = await procesar_cita_si_existe(respuesta)
+            # Procesar cita si existe en la respuesta (detectar tag [CITA] y crear en Google Calendar + Ticket)
+            respuesta = await procesar_cita_si_existe(respuesta, msg.telefono)
+
+            # Enriquecer respuesta si es pregunta de soporte (agregar estado de tickets)
+            respuesta = await enriquecer_respuesta_soporte(respuesta, msg.telefono, msg.texto)
 
             # Guardar mensaje del usuario Y respuesta del agente en memoria
             await guardar_mensaje(msg.telefono, "user", msg.texto)

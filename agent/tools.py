@@ -233,3 +233,72 @@ Horario: {horario}
 
 Te esperamos en nuestro local. ¡Gracias por tu confianza! 🙏
 """
+
+
+# ════════════════════════════════════════════════════════════
+# FUNCIONES PARA SISTEMA DE TICKETS (PHASE 5)
+# ════════════════════════════════════════════════════════════
+
+async def crear_ticket_desde_cita(nombre: str, telefono: str, dispositivo: str, problema: str) -> str:
+    """
+    Crea un ticket de soporte cuando se agenda una cita.
+    Retorna el número de ticket.
+    """
+    from agent.memory import crear_ticket
+    agente = obtener_agente_activo()
+    ticket_numero = await crear_ticket(telefono, nombre, dispositivo, problema, agente)
+    logger.info(f"Ticket creado: {ticket_numero}")
+    return ticket_numero
+
+
+async def buscar_estado_reparacion(telefono: str, consulta: str = "") -> str:
+    """
+    Busca el estado de los tickets del cliente.
+    Si consulta menciona un número de ticket específico, busca ese.
+    Si no, retorna resumen de todos los tickets del cliente.
+    """
+    from agent.memory import buscar_tickets_por_telefono, consultar_ticket
+    import re
+
+    # Intentar extraer número de ticket de la consulta (ej: "MER-20260328-001")
+    patron_ticket = r'[A-Z]{3}-\d{8}-\d{3}'
+    match = re.search(patron_ticket, consulta)
+
+    if match:
+        # El usuario menciona un ticket específico
+        ticket_numero = match.group(0)
+        ticket = await consultar_ticket(ticket_numero)
+        if ticket:
+            return f"""
+📱 **Estado de tu reparación:**
+Ticket: {ticket['ticket_numero']}
+Dispositivo: {ticket['dispositivo']}
+Estado: **{ticket['estado'].upper()}**
+Problema: {ticket['problema']}
+Creado: {ticket['fecha_creacion'][:10]}
+Última actualización: {ticket['fecha_actualizacion'][:10]}
+
+Notas: {ticket['notas'] if ticket['notas'] else 'Sin notas adicionales'}
+"""
+        else:
+            return f"No encontré el ticket {ticket_numero}. Verifica el número."
+
+    # Si no especifica ticket, mostrar todos los tickets del cliente
+    tickets = await buscar_tickets_por_telefono(telefono)
+
+    if not tickets:
+        return "No tenés reparaciones registradas. ¿Necesitas agendar una?"
+
+    respuesta = "📋 **Tus reparaciones:**\n"
+    for i, t in enumerate(tickets, 1):
+        estado_icon = {
+            "abierto": "🆕",
+            "en_progreso": "⚙️",
+            "completado": "✅",
+            "cerrado": "✓",
+        }.get(t["estado"], "•")
+        respuesta += f"\n{i}. {estado_icon} **{t['ticket_numero']}** — {t['dispositivo']}\n"
+        respuesta += f"   Estado: {t['estado']} | Creado: {t['fecha_creacion'][:10]}\n"
+
+    respuesta += "\n¿Cuál de estos tickets necesitas consultar?"
+    return respuesta

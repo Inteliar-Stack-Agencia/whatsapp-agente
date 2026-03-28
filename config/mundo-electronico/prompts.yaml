@@ -229,3 +229,28 @@ filtros:
       - "a qué hora"
       - "a que hora"
     instruccion_extra: "Informa el horario completo: Lunes a Viernes de 11 a 19hs, Sábados de 11 a 14hs, Domingos cerrado. Sé claro y directo."
+
+  soporte:
+    keywords:
+      - "estado"
+      - "cómo va"
+      - "como va"
+      - "mi reparación"
+      - "mi tablet"
+      - "mi celular"
+      - "mi notebook"
+      - "listo"
+      - "cuándo está"
+      - "cuando esta"
+      - "ticket"
+      - "reparación en progreso"
+      - "reparacion en progreso"
+      - "cuando puedo retirar"
+      - "cuando puedo pasar"
+      - "me arreglaron"
+    instruccion_extra: |
+      El cliente consulta por el estado de su reparación o ticket.
+      Sé empático y proporciona el estado actual si puedes accederlo.
+      Si el cliente menciona un número de ticket (ej: MER-20260328-001), búscalo específicamente.
+      Si no menciona ticket, muestra un resumen de todos sus tickets abiertos.
+      Si no hay tickets, sugiere agendar una reparación.
