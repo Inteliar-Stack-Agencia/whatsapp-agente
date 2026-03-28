@@ -18,8 +18,8 @@ logger = logging.getLogger("agentkit")
 # Cliente de Anthropic
 client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# Importar función de detección de tipos de pregunta
-from agent.tools import detectar_tipo_pregunta
+# Importar funciones de herramientas
+from agent.tools import detectar_tipo_pregunta, consultar_precios
 
 
 def obtener_agente_activo() -> str:
@@ -79,6 +79,15 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
     if instruccion_extra:
         system_prompt += f"\n\n## Instrucción especial para esta pregunta\nTipo detectado: {tipo_pregunta}\n{instruccion_extra}"
         logger.info(f"Sistema enriquecido con instrucción para pregunta tipo: {tipo_pregunta}")
+
+    # Si la pregunta es sobre reparación o accesorios, inyectar catálogo de precios
+    if tipo_pregunta in ["reparacion", "accesorios"]:
+        precios = consultar_precios()
+        if precios:
+            # Convertir precios a formato legible para Claude
+            precios_formateado = yaml.dump(precios, allow_unicode=True, default_flow_style=False)
+            system_prompt += f"\n\n## CATÁLOGO DE PRECIOS DISPONIBLES\nUsados para responder consultas de precios:\n\n{precios_formateado}\n**IMPORTANTE:** Si el cliente pregunta por un precio que tienes en el catálogo, responde con el precio. Si no está en el catálogo, di que confirmamos el precio exacto al traer el dispositivo."
+            logger.info(f"Catálogo de precios inyectado en system_prompt para pregunta tipo: {tipo_pregunta}")
 
     # Construir mensajes para la API
     mensajes = []

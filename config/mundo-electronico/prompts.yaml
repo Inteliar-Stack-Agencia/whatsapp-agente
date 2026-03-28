@@ -130,7 +130,11 @@ filtros:
       - "reparan"
       - "arreglan"
       - "precio reparacion"
-    instruccion_extra: "Pregunta qué modelo exacto tiene el dispositivo y cuál es el problema específico. No des precios ni tiempos sin saber el modelo exacto."
+      - "cuanto cuesta"
+      - "cuánto cuesta"
+      - "valor"
+      - "costo"
+    instruccion_extra: "Pregunta qué modelo exacto tiene el dispositivo. Si tienes el precio en el catálogo, comparte el precio y tiempo de reparación directamente. Si no está en el catálogo, explica que confirmamos el precio exacto cuando trae el dispositivo para diagnosis. Sé específico y claro."
 
   accesorios:
     keywords:

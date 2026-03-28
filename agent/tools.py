@@ -71,6 +71,24 @@ def buscar_en_knowledge(consulta: str) -> str:
     return "No encontré información específica sobre eso en mis archivos."
 
 
+def consultar_precios() -> dict:
+    """
+    Carga el catálogo de precios del agente activo desde precios.yaml.
+    Retorna el diccionario completo con estructura de precios.
+    """
+    agente = obtener_agente_activo()
+    ruta = f"config/{agente}/precios.yaml"
+
+    try:
+        with open(ruta, "r", encoding="utf-8") as f:
+            precios = yaml.safe_load(f) or {}
+            logger.info(f"Catálogo de precios cargado para agente: {agente}")
+            return precios
+    except FileNotFoundError:
+        logger.warning(f"Archivo de precios no encontrado: {ruta}")
+        return {}
+
+
 def detectar_tipo_pregunta(mensaje: str) -> tuple[str, str]:
     """
     Detecta el tipo de pregunta según los filtros configurados en prompts.yaml.
