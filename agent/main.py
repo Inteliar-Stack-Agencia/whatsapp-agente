@@ -67,25 +67,46 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
     2. Ticket de soporte/reparación en la base de datos
     Elimina el tag del texto visible.
 
-    Formato esperado: [CITA]nombre|teléfono|dispositivo|YYYY-MM-DD|HH:MM[/CITA]
+    Soporta dos formatos:
+    1. Pipe format: [CITA]nombre|teléfono|dispositivo|YYYY-MM-DD|HH:MM[/CITA]
+    2. JSON format: [CITA: nombre="...", telefono="...", dispositivo="...", fecha="...", hora="..."]
     """
-    patron = r'\[CITA\](.*?)\[/CITA\]'
-    match = re.search(patron, respuesta, re.DOTALL)
+    # Intentar formato pipe primero
+    patron_pipe = r'\[CITA\](.*?)\[/CITA\]'
+    match = re.search(patron_pipe, respuesta, re.DOTALL)
 
-    if not match:
-        return respuesta
+    nombre, telefono_cita, dispositivo, fecha, hora = None, None, None, None, None
 
-    datos_raw = match.group(1).strip()
-    partes = datos_raw.split("|")
+    if match:
+        # Formato pipe
+        datos_raw = match.group(1).strip()
+        partes = datos_raw.split("|")
+        if len(partes) == 5:
+            nombre, telefono_cita, dispositivo, fecha, hora = [p.strip() for p in partes]
+    else:
+        # Intentar formato JSON
+        patron_json = r'\[CITA:\s*(.*?)\]'
+        match = re.search(patron_json, respuesta, re.DOTALL)
+        if match:
+            datos_raw = match.group(1)
+            # Parsear key="value" format
+            nombre_match = re.search(r'nombre="([^"]*)"', datos_raw)
+            tel_match = re.search(r'telefono="([^"]*)"', datos_raw)
+            disp_match = re.search(r'dispositivo="([^"]*)"', datos_raw)
+            fecha_match = re.search(r'fecha="([^"]*)"', datos_raw)
+            hora_match = re.search(r'hora="([^"]*)"', datos_raw)
 
-    # Validar que tenemos los 5 datos esperados
-    if len(partes) == 5:
-        nombre, telefono_cita, dispositivo, fecha, hora = partes
-        nombre = nombre.strip()
-        telefono_cita = telefono_cita.strip()
-        dispositivo = dispositivo.strip()
-        fecha = fecha.strip()
-        hora = hora.strip()
+            if all([nombre_match, tel_match, disp_match, fecha_match, hora_match]):
+                nombre = nombre_match.group(1).strip()
+                telefono_cita = tel_match.group(1).strip()
+                dispositivo = disp_match.group(1).strip()
+                fecha = fecha_match.group(1).strip()
+                hora = hora_match.group(1).strip()
+
+    # Si encontramos datos válidos, procesar
+    if nombre and telefono_cita and dispositivo and fecha and hora:
+        # Limpiar símbolos del teléfono si los tiene
+        telefono_cita = re.sub(r'[^\d]', '', telefono_cita)
 
         # Crear evento en Google Calendar
         exito_cal = await crear_evento_calendario(nombre, telefono_cita, dispositivo, fecha, hora)
@@ -99,9 +120,10 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
         except Exception as e:
             logger.error(f"Error creando ticket: {e}")
 
-    # Eliminar el tag del texto visible al cliente
-    respuesta_limpia = re.sub(patron, "", respuesta, flags=re.DOTALL).strip()
-    return respuesta_limpia
+    # Eliminar TODOS los posibles tags del texto visible al cliente
+    respuesta_limpia = re.sub(patron_pipe, "", respuesta, flags=re.DOTALL)
+    respuesta_limpia = re.sub(patron_json, "", respuesta_limpia, flags=re.DOTALL)
+    return respuesta_limpia.strip()
 
 
 async def enriquecer_respuesta_soporte(respuesta: str, telefono: str, mensaje: str) -> str:
