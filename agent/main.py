@@ -209,7 +209,7 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
 
     # Eliminar TODOS los posibles tags del texto visible al cliente
     respuesta_limpia = re.sub(patron_pipe, "", respuesta, flags=re.DOTALL)
-    respuesta_limpia = re.sub(patron_json, "", respuesta_limpia, flags=re.DOTALL)
+    respuesta_limpia = re.sub(r'\[CITA:\s*(.*?)\]', "", respuesta_limpia, flags=re.DOTALL)
     return respuesta_limpia.strip()
 
 
