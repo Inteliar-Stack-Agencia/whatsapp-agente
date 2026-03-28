@@ -23,6 +23,7 @@ from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, limpiar_historial, buscar_tickets_por_telefono
 from agent.tools import detectar_tipo_pregunta, crear_ticket_desde_cita
 import re
+import asyncio as aio
 
 TELEFONO_TEST = "test-local-001"
 
@@ -101,19 +102,47 @@ async def main():
         respuesta = await generar_respuesta(mensaje, historial)
         print(respuesta)
 
-        # Detectar si hay [CITA] en la respuesta y crear ticket
-        patron_cita = r'\[CITA\](.*?)\[/CITA\]'
-        match = re.search(patron_cita, respuesta)
+        # Procesar tag [CITA] — soporta dos formatos
+        nombre, telefono_cita, dispositivo, fecha, hora = None, None, None, None, None
+
+        # Intentar formato pipe: [CITA]nombre|tel|disp|fecha|hora[/CITA]
+        patron_pipe = r'\[CITA\](.*?)\[/CITA\]'
+        match = re.search(patron_pipe, respuesta)
         if match:
             datos = match.group(1).split("|")
             if len(datos) == 5:
                 nombre, telefono_cita, dispositivo, fecha, hora = [d.strip() for d in datos]
-                try:
-                    ticket_numero = await crear_ticket_desde_cita(nombre, telefono_cita, dispositivo, "Reparación agendada")
-                    respuesta = re.sub(patron_cita, "", respuesta).strip()
-                    print("\n[✓ Ticket creado:", ticket_numero, "]")
-                except Exception as e:
-                    print(f"\n[Error creando ticket: {e}]")
+        else:
+            # Intentar formato JSON: [CITA: nombre="...", telefono="...", ...]
+            patron_json = r'\[CITA:\s*(.*?)\]'
+            match = re.search(patron_json, respuesta)
+            if match:
+                datos_raw = match.group(1)
+                nombre_m = re.search(r'nombre="([^"]*)"', datos_raw)
+                tel_m = re.search(r'telefono="([^"]*)"', datos_raw)
+                disp_m = re.search(r'dispositivo="([^"]*)"', datos_raw)
+                fecha_m = re.search(r'fecha="([^"]*)"', datos_raw)
+                hora_m = re.search(r'hora="([^"]*)"', datos_raw)
+                if all([nombre_m, tel_m, disp_m, fecha_m, hora_m]):
+                    nombre = nombre_m.group(1).strip()
+                    telefono_cita = tel_m.group(1).strip()
+                    dispositivo = disp_m.group(1).strip()
+                    fecha = fecha_m.group(1).strip()
+                    hora = hora_m.group(1).strip()
+
+        # Si encontramos datos, crear ticket
+        if nombre and telefono_cita and dispositivo and fecha and hora:
+            try:
+                # Limpiar símbolos del teléfono
+                telefono_limpio = re.sub(r'[^\d]', '', telefono_cita)
+                ticket_numero = await crear_ticket_desde_cita(nombre, telefono_limpio, dispositivo, "Reparación agendada")
+                # Limpiar tags de la respuesta
+                respuesta_clean = re.sub(patron_pipe, "", respuesta)
+                respuesta_clean = re.sub(patron_json, "", respuesta_clean)
+                respuesta = respuesta_clean.strip()
+                print(f"\n[✓ Ticket creado: {ticket_numero}]")
+            except Exception as e:
+                print(f"\n[Error creando ticket: {e}]")
 
         print()
 
