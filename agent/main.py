@@ -18,6 +18,7 @@ from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
 from agent.tools import crear_evento_calendario, detectar_tipo_pregunta, crear_ticket_desde_cita, buscar_estado_reparacion
+from agent.admin import admin_router
 
 load_dotenv()
 
@@ -47,6 +48,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Incluir rutas del admin
+app.include_router(admin_router)
 
 
 @app.get("/")
