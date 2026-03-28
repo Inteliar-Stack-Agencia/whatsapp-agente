@@ -74,6 +74,12 @@ async def generar_respuesta(mensaje: str, historial: list[dict]) -> str:
 
     system_prompt = cargar_system_prompt()
 
+    # Agregar fecha de hoy para que Claude pueda convertir "mañana", "próximo lunes", etc.
+    from datetime import datetime, timedelta
+    hoy = datetime.utcnow()
+    mañana = (hoy + timedelta(days=1)).strftime("%Y-%m-%d")
+    system_prompt += f"\n\n## Información de contexto\nFecha de hoy: {hoy.strftime('%Y-%m-%d')} ({hoy.strftime('%A')})\nMañana será: {mañana}\nCuando el cliente mencione fechas relativas (mañana, pasado mañana, próximo lunes, etc.), CONVIERTE siempre a formato ISO (YYYY-MM-DD) para el tag [CITA]."
+
     # Detectar tipo de pregunta y enriquecer el system prompt
     tipo_pregunta, instruccion_extra = detectar_tipo_pregunta(mensaje)
     if instruccion_extra:

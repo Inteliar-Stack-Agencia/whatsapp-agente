@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial, limpiar_historial, buscar_tickets_por_telefono
-from agent.tools import enriquecer_respuesta_soporte, detectar_tipo_pregunta, crear_ticket_desde_cita
+from agent.tools import detectar_tipo_pregunta, crear_ticket_desde_cita
 import re
 
 TELEFONO_TEST = "test-local-001"
@@ -114,14 +114,6 @@ async def main():
                     print("\n[✓ Ticket creado:", ticket_numero, "]")
                 except Exception as e:
                     print(f"\n[Error creando ticket: {e}]")
-
-        # Enriquecer respuesta si es pregunta de soporte
-        tipo_pregunta, _ = detectar_tipo_pregunta(mensaje)
-        if tipo_pregunta == "soporte":
-            try:
-                respuesta = await enriquecer_respuesta_soporte(respuesta, TELEFONO_TEST, mensaje)
-            except Exception as e:
-                print(f"\n[Nota: no se pudo enriquecer con información de tickets: {e}]")
 
         print()
 
