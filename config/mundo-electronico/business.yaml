@@ -17,9 +17,7 @@ negocio:
     de reparación, soporte técnico y soluciones de logística.
   horario: "Lunes a viernes 11:00 a 19:00 hs, Sábados 11:00 a 14:00 hs"
   ubicacion: "Argentina"
-  # Google Calendar ID para este negocio (opcional, si usas modo multi-calendario del proveedor)
-  # Formato: algo@group.calendar.google.com
-  calendar_id: ""
+  calendar_id: "inteliarstack.ia@gmail.com"
 
 agente:
   nombre: Mundo Bot
