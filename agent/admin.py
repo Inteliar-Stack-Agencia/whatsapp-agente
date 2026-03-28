@@ -1,9 +1,10 @@
 # agent/admin.py — Dashboard Admin para gestionar tickets
-# Generado por AgentKit
+# Conectado a Supabase
 
 """
 Interfaz web para que el dueño del negocio vea y actualice tickets de reparación.
 Accesible en /admin (protegida con contraseña simple)
+Lee y escribe en Supabase directamente.
 """
 
 import os
@@ -11,8 +12,7 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from agent.memory import buscar_tickets_por_telefono, actualizar_ticket
-from agent.memory import async_session, Ticket, select
+from agent.supabase_client import supabase_client, is_supabase_enabled
 
 logger = logging.getLogger("agentkit")
 
@@ -29,27 +29,50 @@ def verificar_sesion(request: Request) -> bool:
 
 
 async def obtener_todos_los_tickets() -> list[dict]:
-    """Obtiene todos los tickets de la base de datos (con paginación simple)."""
-    async with async_session() as session:
-        query = select(Ticket).order_by(Ticket.fecha_creacion.desc()).limit(100)
-        result = await session.execute(query)
-        tickets = result.scalars().all()
+    """Obtiene todos los tickets de Supabase."""
+    if not is_supabase_enabled():
+        logger.warning("Supabase no está configurado — no hay tickets")
+        return []
 
-        return [
-            {
-                "id": t.id,
-                "ticket_numero": t.ticket_numero,
-                "nombre_cliente": t.nombre_cliente,
-                "telefono": t.telefono,
-                "dispositivo": t.dispositivo,
-                "problema": t.problema,
-                "estado": t.estado,
-                "fecha_creacion": t.fecha_creacion.strftime("%d/%m/%Y %H:%M"),
-                "fecha_actualizacion": t.fecha_actualizacion.strftime("%d/%m/%Y %H:%M"),
-                "notas": t.notas,
-            }
-            for t in tickets
-        ]
+    try:
+        result = supabase_client.table("tickets").select("*").order("fecha_creacion", desc=True).limit(100).execute()
+        if result.data:
+            tickets_formateados = []
+            for t in result.data:
+                # Convertir timestamps a formato legible
+                fecha_creacion = t.get("fecha_creacion", "")
+                fecha_actualizacion = t.get("fecha_actualizacion", "")
+
+                if fecha_creacion:
+                    try:
+                        fecha_creacion = datetime.fromisoformat(fecha_creacion.replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M")
+                    except:
+                        pass
+
+                if fecha_actualizacion:
+                    try:
+                        fecha_actualizacion = datetime.fromisoformat(fecha_actualizacion.replace("Z", "+00:00")).strftime("%d/%m/%Y %H:%M")
+                    except:
+                        pass
+
+                tickets_formateados.append({
+                    "id": t.get("id"),
+                    "ticket_numero": t.get("ticket_numero"),
+                    "nombre_cliente": t.get("nombre_cliente"),
+                    "telefono": t.get("telefono"),
+                    "dispositivo": t.get("dispositivo"),
+                    "problema": t.get("problema"),
+                    "estado": t.get("estado", "abierto"),
+                    "fecha_creacion": fecha_creacion,
+                    "fecha_actualizacion": fecha_actualizacion,
+                    "notas": t.get("notas", ""),
+                })
+
+            return tickets_formateados
+        return []
+    except Exception as e:
+        logger.error(f"Error obteniendo tickets: {e}")
+        return []
 
 
 def generar_html_dashboard(tickets: list[dict]) -> str:
@@ -61,6 +84,12 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
         "completado": "✅ Completado",
         "cerrado": "✓ Cerrado",
     }
+
+    # Estadísticas
+    total = len(tickets)
+    abiertos = len([t for t in tickets if t["estado"] == "abierto"])
+    en_progreso = len([t for t in tickets if t["estado"] == "en_progreso"])
+    completados = len([t for t in tickets if t["estado"] == "completado"])
 
     filas_html = ""
     for t in tickets:
@@ -160,16 +189,19 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
                 margin-bottom: 8px;
             }}
 
-            .stat-card .number {{
+            .stat-card .numero {{
                 font-size: 32px;
                 font-weight: bold;
                 color: #667eea;
             }}
 
+            .tabla-wrapper {{
+                overflow-x: auto;
+            }}
+
             table {{
                 width: 100%;
                 border-collapse: collapse;
-                margin-top: 20px;
             }}
 
             th {{
@@ -178,15 +210,12 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
                 text-align: left;
                 font-weight: 600;
                 color: #333;
-                font-size: 13px;
-                text-transform: uppercase;
                 border-bottom: 2px solid #e9ecef;
             }}
 
             td {{
                 padding: 15px;
                 border-bottom: 1px solid #e9ecef;
-                font-size: 14px;
             }}
 
             tr:hover {{
@@ -194,48 +223,46 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
             }}
 
             .numero {{
-                font-weight: 600;
+                font-weight: bold;
                 color: #667eea;
             }}
 
             .estado-select {{
-                padding: 6px 10px;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                font-size: 13px;
+                padding: 8px 12px;
+                border: 1px solid #ddd;
+                border-radius: 6px;
                 cursor: pointer;
-                background: white;
+                font-size: 13px;
             }}
 
             .estado-select.abierto {{
-                border-color: #ffc107;
-                color: #ff6b6b;
+                background-color: #fff3cd;
+                color: #856404;
             }}
 
             .estado-select.en_progreso {{
-                border-color: #17a2b8;
-                color: #0c5460;
+                background-color: #cfe2ff;
+                color: #084298;
             }}
 
             .estado-select.completado {{
-                border-color: #28a745;
-                color: #155724;
+                background-color: #d1e7dd;
+                color: #0f5132;
             }}
 
             .estado-select.cerrado {{
-                border-color: #6c757d;
+                background-color: #e2e3e5;
                 color: #383d41;
             }}
 
             .btn-notas {{
+                padding: 8px 12px;
                 background: #667eea;
                 color: white;
                 border: none;
-                padding: 6px 12px;
-                border-radius: 4px;
+                border-radius: 6px;
                 cursor: pointer;
-                font-size: 12px;
-                transition: background 0.2s;
+                font-size: 13px;
             }}
 
             .btn-notas:hover {{
@@ -257,128 +284,100 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
                 background-color: white;
                 margin: 5% auto;
                 padding: 30px;
-                border-radius: 8px;
+                border-radius: 12px;
                 width: 90%;
                 max-width: 500px;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             }}
 
             .modal-header {{
                 font-size: 20px;
-                font-weight: 600;
+                font-weight: bold;
                 margin-bottom: 20px;
                 color: #333;
             }}
 
-            .modal-body {{
-                margin-bottom: 20px;
+            .modal-close {{
+                float: right;
+                font-size: 24px;
+                cursor: pointer;
+                color: #999;
             }}
 
-            .modal-body textarea {{
+            .modal-close:hover {{
+                color: #333;
+            }}
+
+            textarea {{
                 width: 100%;
                 padding: 12px;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-                font-family: monospace;
-                font-size: 13px;
-                resize: vertical;
-                min-height: 120px;
-            }}
-
-            .modal-footer {{
-                display: flex;
-                gap: 10px;
-                justify-content: flex-end;
-            }}
-
-            .btn {{
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
+                border: 1px solid #ddd;
+                border-radius: 6px;
                 font-size: 14px;
-                transition: background 0.2s;
+                font-family: inherit;
+                min-height: 120px;
+                margin-bottom: 15px;
+                resize: vertical;
             }}
 
-            .btn-primary {{
+            .btn-guardar {{
                 background: #667eea;
                 color: white;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
             }}
 
-            .btn-primary:hover {{
+            .btn-guardar:hover {{
                 background: #764ba2;
             }}
 
-            .btn-secondary {{
+            .btn-cancelar {{
                 background: #e9ecef;
                 color: #333;
-            }}
-
-            .btn-secondary:hover {{
-                background: #dee2e6;
-            }}
-
-            .close {{
-                color: #aaa;
-                float: right;
-                font-size: 28px;
-                font-weight: bold;
+                padding: 10px 20px;
+                border: none;
+                border-radius: 6px;
                 cursor: pointer;
+                font-size: 14px;
+                margin-left: 10px;
             }}
 
-            .close:hover {{
-                color: #000;
-            }}
-
-            .loading {{
-                display: none;
-                text-align: center;
-                padding: 20px;
-                color: #666;
-            }}
-
-            .success-msg {{
-                background: #d4edda;
-                color: #155724;
-                padding: 12px 20px;
-                border-radius: 4px;
-                margin-bottom: 20px;
-                display: none;
+            .btn-cancelar:hover {{
+                background: #dee2e6;
             }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>📋 Dashboard de Tickets</h1>
-                <p>Gestiona todas las reparaciones en un solo lugar</p>
+                <h1>🎫 Dashboard de Tickets</h1>
+                <p>Gestión de reparaciones en tiempo real</p>
             </div>
 
             <div class="content">
-                <div class="success-msg" id="successMsg">✓ Cambio guardado correctamente</div>
-
                 <div class="stats">
                     <div class="stat-card">
-                        <h3>Total de Tickets</h3>
-                        <div class="number">{len(tickets)}</div>
+                        <h3>Total</h3>
+                        <div class="numero">{total}</div>
                     </div>
                     <div class="stat-card">
                         <h3>Abiertos</h3>
-                        <div class="number">{sum(1 for t in tickets if t['estado'] == 'abierto')}</div>
+                        <div class="numero">{abiertos}</div>
                     </div>
                     <div class="stat-card">
-                        <h3>En Progreso</h3>
-                        <div class="number">{sum(1 for t in tickets if t['estado'] == 'en_progreso')}</div>
+                        <h3>En progreso</h3>
+                        <div class="numero">{en_progreso}</div>
                     </div>
                     <div class="stat-card">
                         <h3>Completados</h3>
-                        <div class="number">{sum(1 for t in tickets if t['estado'] == 'completado')}</div>
+                        <div class="numero">{completados}</div>
                     </div>
                 </div>
 
-                <div class="loading" id="loading">Guardando...</div>
-
-                <div style="overflow-x: auto;">
+                <div class="tabla-wrapper">
                     <table>
                         <thead>
                             <tr>
@@ -387,117 +386,81 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
                                 <th>Dispositivo</th>
                                 <th>Problema</th>
                                 <th>Estado</th>
-                                <th>Creado</th>
+                                <th>Fecha</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filas_html}
+                            {filas_html if filas_html else '<tr><td colspan="7" style="text-align: center; padding: 40px;">No hay tickets registrados</td></tr>'}
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- Modal para notas -->
         <div id="notasModal" class="modal">
             <div class="modal-content">
-                <span class="close" onclick="cerrarModal()">&times;</span>
-                <div class="modal-header">Notas para <span id="ticketNum"></span></div>
-                <div class="modal-body">
-                    <textarea id="notasText" placeholder="Agrega notas sobre el estado de esta reparación..."></textarea>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
-                    <button class="btn btn-primary" onclick="guardarNotas()">Guardar</button>
-                </div>
+                <span class="modal-close" onclick="cerrarNotas()">&times;</span>
+                <div class="modal-header">Notas — <span id="ticketNumero"></span></div>
+                <textarea id="notasText" placeholder="Agregar notas sobre este ticket..."></textarea>
+                <button class="btn-guardar" onclick="guardarNotas()">Guardar</button>
+                <button class="btn-cancelar" onclick="cerrarNotas()">Cancelar</button>
             </div>
         </div>
 
         <script>
-            let ticketActual = null;
+            let ticketId = null;
 
-            async function cambiarEstado(ticketId, nuevoEstado) {{
-                document.getElementById('loading').style.display = 'block';
-                try {{
-                    const response = await fetch('/admin/actualizar', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{
-                            ticket_id: ticketId,
-                            estado: nuevoEstado
-                        }})
-                    }});
-
-                    if (response.ok) {{
-                        mostrarExito();
-                        setTimeout(() => location.reload(), 1500);
-                    }} else {{
-                        alert('Error al guardar');
-                    }}
-                }} catch (e) {{
-                    alert('Error: ' + e);
-                }} finally {{
-                    document.getElementById('loading').style.display = 'none';
-                }}
-            }}
-
-            function abrirNotas(ticketId, ticketNum) {{
-                ticketActual = ticketId;
-                document.getElementById('ticketNum').textContent = ticketNum;
-                document.getElementById('notasText').value = '';
+            function abrirNotas(id, numero) {{
+                ticketId = id;
+                document.getElementById('ticketNumero').textContent = numero;
                 document.getElementById('notasModal').style.display = 'block';
+                // Aquí podrías hacer fetch para cargar las notas existentes
             }}
 
-            function cerrarModal() {{
+            function cerrarNotas() {{
                 document.getElementById('notasModal').style.display = 'none';
-                ticketActual = null;
+                ticketId = null;
             }}
 
-            async function guardarNotas() {{
-                const nota = document.getElementById('notasText').value;
-                if (!nota.trim()) {{
-                    alert('Escribe una nota');
-                    return;
-                }}
-
-                document.getElementById('loading').style.display = 'block';
-                try {{
-                    const response = await fetch('/admin/actualizar', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{
-                            ticket_id: ticketActual,
-                            nota: nota
-                        }})
-                    }});
-
-                    if (response.ok) {{
-                        cerrarModal();
-                        mostrarExito();
-                        setTimeout(() => location.reload(), 1500);
+            function guardarNotas() {{
+                const notas = document.getElementById('notasText').value;
+                fetch('/admin/actualizar', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{id: ticketId, notas: notas}})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        alert('Notas guardadas ✓');
+                        cerrarNotas();
+                        location.reload();
                     }} else {{
                         alert('Error al guardar');
                     }}
-                }} catch (e) {{
-                    alert('Error: ' + e);
-                }} finally {{
-                    document.getElementById('loading').style.display = 'none';
-                }}
+                }});
             }}
 
-            function mostrarExito() {{
-                const msg = document.getElementById('successMsg');
-                msg.style.display = 'block';
-                setTimeout(() => {{
-                    msg.style.display = 'none';
-                }}, 2000);
+            function cambiarEstado(id, nuevoEstado) {{
+                fetch('/admin/actualizar', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{id: id, estado: nuevoEstado}})
+                }})
+                .then(r => r.json())
+                .then(data => {{
+                    if (!data.success) {{
+                        alert('Error al actualizar estado');
+                        location.reload();
+                    }}
+                }});
             }}
 
             window.onclick = function(event) {{
                 const modal = document.getElementById('notasModal');
                 if (event.target == modal) {{
-                    cerrarModal();
+                    cerrarNotas();
                 }}
             }}
         </script>
@@ -508,60 +471,95 @@ def generar_html_dashboard(tickets: list[dict]) -> str:
     return html
 
 
-@admin_router.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request):
-    """Dashboard principal de admin."""
+@admin_router.get("/admin")
+async def dashboard(request: Request):
+    """Muestra el dashboard (requiere sesión válida)."""
     if not verificar_sesion(request):
-        # Mostrar página de login
-        return """
+        # Mostrar login
+        html_login = """
         <!DOCTYPE html>
-        <html>
+        <html lang="es">
         <head>
             <meta charset="UTF-8">
             <title>Admin Login</title>
             <style>
-                body { font-family: sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .login-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-                h1 { text-align: center; color: #333; margin-bottom: 30px; }
-                input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-                button { width: 100%; padding: 12px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-                button:hover { background: #764ba2; }
-                .error { color: #dc3545; text-align: center; margin-bottom: 20px; }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .login-box {
+                    background: white;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                    width: 100%;
+                    max-width: 400px;
+                }
+                h1 {
+                    text-align: center;
+                    color: #333;
+                    margin-bottom: 30px;
+                }
+                input {
+                    width: 100%;
+                    padding: 12px;
+                    margin-bottom: 20px;
+                    border: 1px solid #ddd;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    box-sizing: border-box;
+                }
+                button {
+                    width: 100%;
+                    padding: 12px;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    font-size: 16px;
+                    cursor: pointer;
+                }
+                button:hover {
+                    opacity: 0.9;
+                }
             </style>
         </head>
         <body>
             <div class="login-box">
-                <h1>🔐 Admin Dashboard</h1>
-                <form method="POST" action="/admin/login">
-                    <input type="password" name="password" placeholder="Contraseña" required>
-                    <button type="submit">Entrar</button>
+                <h1>🔐 Admin</h1>
+                <form method="post" action="/admin/login">
+                    <input type="password" name="password" placeholder="Contraseña" required autofocus>
+                    <button type="submit">Ingresar</button>
                 </form>
             </div>
         </body>
         </html>
         """
+        return HTMLResponse(html_login)
 
-    # Usuario autenticado — mostrar dashboard
+    # Obtener tickets y mostrar dashboard
     tickets = await obtener_todos_los_tickets()
     html = generar_html_dashboard(tickets)
-    return HTMLResponse(content=html)
+
+    response = HTMLResponse(html)
+    response.set_cookie("admin_session", ADMIN_PASSWORD, max_age=604800)  # 7 días
+    return response
 
 
 @admin_router.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
-    """Valida contraseña y crea sesión."""
-    response = RedirectResponse(url="/admin", status_code=302)
+    """Valida la contraseña y crea sesión."""
     if password == ADMIN_PASSWORD:
-        response.set_cookie(
-            "admin_session",
-            ADMIN_PASSWORD,
-            max_age=86400 * 7,  # 7 días
-            httponly=True,
-        )
+        response = RedirectResponse(url="/admin", status_code=302)
+        response.set_cookie("admin_session", ADMIN_PASSWORD, max_age=604800)
         return response
     else:
-        # Login fallido — volver al login con error
-        return RedirectResponse(url="/admin?error=1", status_code=302)
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
 
 
 @admin_router.post("/admin/actualizar")
@@ -570,38 +568,28 @@ async def admin_actualizar(request: Request):
     if not verificar_sesion(request):
         raise HTTPException(status_code=401, detail="No autorizado")
 
+    if not is_supabase_enabled():
+        return {"success": False, "error": "Supabase no configurado"}
+
     try:
-        body = await request.json()
-    except:
-        raise HTTPException(status_code=400, detail="JSON inválido")
+        data = await request.json()
+        ticket_id = data.get("id")
+        nuevo_estado = data.get("estado")
+        nuevas_notas = data.get("notas")
 
-    ticket_id = body.get("ticket_id")
-    estado = body.get("estado")
-    nota = body.get("nota")
+        update_data = {}
+        if nuevo_estado:
+            update_data["estado"] = nuevo_estado
+        if nuevas_notas is not None:
+            update_data["notas"] = nuevas_notas
 
-    if not ticket_id:
-        raise HTTPException(status_code=400, detail="ticket_id requerido")
+        if update_data:
+            supabase_client.table("tickets").update(update_data).eq("id", ticket_id).execute()
+            logger.info(f"Ticket {ticket_id} actualizado: {update_data}")
+            return {"success": True}
 
-    # Obtener el ticket
-    async with async_session() as session:
-        query = select(Ticket).where(Ticket.id == ticket_id)
-        result = await session.execute(query)
-        ticket = result.scalar_one_or_none()
+        return {"success": False, "error": "No hay datos para actualizar"}
 
-        if not ticket:
-            raise HTTPException(status_code=404, detail="Ticket no encontrado")
-
-        if estado:
-            ticket.estado = estado
-            logger.info(f"Ticket {ticket.ticket_numero} estado cambiado a: {estado}")
-
-        if nota:
-            timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-            ticket.notas += f"\n[{timestamp}] {nota}"
-            logger.info(f"Nota agregada a {ticket.ticket_numero}")
-
-        ticket.fecha_actualizacion = datetime.utcnow()
-        session.add(ticket)
-        await session.commit()
-
-    return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error actualizando ticket: {e}")
+        return {"success": False, "error": str(e)}
