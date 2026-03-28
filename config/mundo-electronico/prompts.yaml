@@ -206,40 +206,27 @@ filtros:
          - Confirma con el cliente: "Te agendé para el [fecha] a las [hora]"
          - Luego INMEDIATAMENTE agrega el tag invisible al FINAL de la respuesta
 
-      3. Formato EXACTO del tag (INVISIBLE PARA EL CLIENTE):
-         [CITA]NOMBRE_COMPLETO|NUMERO_TELEFONO|DISPOSITIVO_PROBLEMA|YYYY-MM-DD|HH:MM[/CITA]
+      3. FORMATO EXACTO Y LITERAL DEL TAG (copiar este patrón):
 
-         REGLAS DEL FORMATO:
-         - Empieza con: [CITA]
-         - 5 campos separados por | (pipe, no guión)
-         - Campo 1: Nombre completo (ej: Juan Pérez)
-         - Campo 2: Teléfono exacto (ej: 5491165689145, SIN símbolos +)
-         - Campo 3: Dispositivo y problema (ej: iPhone 14 pantalla rota)
-         - Campo 4: Fecha en ISO (ej: 2026-03-30, SIEMPRE YYYY-MM-DD)
-         - Campo 5: Hora 24h (ej: 15:00)
-         - Termina con: [/CITA]
+         [CITA]NombreCompleto|Teléfono|DispositivoProblema|YYYY-MM-DD|HH:MM[/CITA]
 
-      ✅ EJEMPLOS CORRECTOS:
-      "Perfecto Juan! Te agendé para el martes 30 de marzo a las 15:00.
-      [CITA]Juan Pérez|5491165689145|iPhone 14 pantalla rota|2026-03-30|15:00[/CITA]"
+         EJEMPLO LITERAL (copia este patrón):
+         [CITA]Juan Pérez|5491165689145|iPhone 14 pantalla rota|2026-03-30|15:00[/CITA]
 
-      "¡Excelente! Tu cita está confirmada para el 30 de marzo a las 11:00.
-      [CITA]María González|5491234567890|Samsung Galaxy S21 no enciende|2026-03-30|11:00[/CITA]"
+         OTRO EJEMPLO LITERAL:
+         [CITA]María González|5491234567890|Samsung Galaxy S21 no enciende|2026-03-30|11:00[/CITA]
 
-      ❌ FORMATOS INCORRECTOS (NO hacer estos):
-      - [CITA: nombre="Juan Pérez", ...] ← MAL (no usar JSON/key=value)
-      - [CITA]Juan|+5491165689145|... ← MAL (sin + en teléfono)
-      - [CITA]Juan Pérez|5491165689145|pantalla rota|30-03-2026|15:00 ← MAL (fecha mal formato)
+         INSTRUCCIÓN LITERAL: después de confirmar la cita con el cliente, agrega EXACTAMENTE esto al final:
+         [CITA]<nombre_del_cliente>|<numero_telefonico>|<dispositivo_problema>|<fecha_YYYYMMDD>|<hora_HHMM>[/CITA]
 
-      REGLAS CRÍTICAS:
-      - SOLO incluye el tag cuando YA tienes TODOS los 5 datos CONFIRMADOS
-      - El tag DEBE ir al FINAL de la respuesta, nada después
-      - Usa formato EXACTO: [CITA]campo1|campo2|campo3|campo4|campo5[/CITA]
-      - Usa datos EXACTOS que el cliente dió (nombre, teléfono sin símbolos)
-      - Convierte SIEMPRE fechas relativas a YYYY-MM-DD (mañana, próximo lunes, etc.)
-      - Hora en HH:MM formato 24h (15:00, no 3pm)
-      - Si es fuera de horario, propone horario válido ANTES de confirmar
-      - El tag es invisible, NO aparece en la respuesta visible del cliente
+         NOTAS CRÍTICAS:
+         - NO uses corchetes adicionales, NO uses comillas, NO uses key="value"
+         - SOLO: [CITA] + 5 datos separados por | + [/CITA]
+         - Ejemplo CORRECTO: [CITA]Juan Pérez|5491165689145|iPhone 14 pantalla rota|2026-03-30|15:00[/CITA]
+         - Ejemplo INCORRECTO: [CITA: nombre="Juan Pérez" ...] o [CITA: nombre=Juan ...] - NO hagas esto
+         - El teléfono sin símbolos: 5491165689145 (no +54, no guiones)
+         - Fecha siempre YYYY-MM-DD: 2026-03-30 (no 30-03-2026, no 30/03/2026)
+         - Hora siempre HH:MM: 15:00 (no 3pm, no 15h)
 
   horario:
     keywords:
