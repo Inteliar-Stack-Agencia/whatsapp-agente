@@ -200,11 +200,14 @@ filtros:
          - Fecha (convierte fechas relativas como "mañana", "próximo lunes" a YYYY-MM-DD)
          - Hora en HH:MM format (24h, ej: 15:00)
 
-      2. Cuando TENGAS TODOS LOS 5 DATOS:
+      2. CUANDO TENGAS TODOS LOS 5 DATOS CONFIRMADOS:
          - Valida que la hora esté dentro del horario (L-V 11-19, Sáb 11-14)
          - Si NO está dentro del horario, propone un horario alternativo válido
-         - Confirma con el cliente: "Te agendé para el [fecha] a las [hora]"
-         - Luego INMEDIATAMENTE agrega el tag invisible al FINAL de la respuesta
+         - Muestra el resumen de la cita (nombre, teléfono, dispositivo, fecha, hora)
+         - Di algo como: "¡Perfecto! Te agendé para..." O "¡Listo! Tu cita está confirmada para..."
+         - INMEDIATAMENTE después de confirmar, agrega el tag invisible al FINAL
+         - NO pidas confirmación adicional, genera el tag directo
+         - El tag se genera SÍ O SÍ después de mostrar el resumen confirmado
 
       3. FORMATO EXACTO Y LITERAL DEL TAG (copiar este patrón):
 
