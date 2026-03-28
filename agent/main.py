@@ -59,6 +59,46 @@ async def health_check():
     return {"status": "ok", "service": "agentkit"}
 
 
+async def extraer_datos_confirmacion(respuesta: str) -> dict:
+    """
+    Extrae datos de una confirmación de cita de la respuesta del bot.
+    Busca patrones como "Nombre:", "Teléfono:", "Dispositivo:", "Fecha:", "Hora:"
+    """
+    datos = {}
+
+    # Buscar nombre (Nombre:, nombre:, Name:, etc.)
+    nombre_match = re.search(r'(?:Nombre|nombre|Name)[:]*\s*([^:\n]+)', respuesta)
+    if nombre_match:
+        datos['nombre'] = nombre_match.group(1).strip('*_').strip()
+
+    # Buscar teléfono/contacto
+    tel_match = re.search(r'(?:Teléfono|Contacto|Telefono|telefono|contacto)[:]*\s*([^:\n]+)', respuesta)
+    if tel_match:
+        datos['telefono'] = tel_match.group(1).strip('*_').strip()
+
+    # Buscar dispositivo
+    disp_match = re.search(r'(?:Dispositivo|dispositivo|Device)[:]*\s*([^:\n]+)', respuesta)
+    if disp_match:
+        datos['dispositivo'] = disp_match.group(1).strip('*_').strip()
+
+    # Buscar problema
+    prob_match = re.search(r'(?:Problema|problema|Problem|Issue)[:]*\s*([^:\n]+)', respuesta)
+    if prob_match:
+        datos['problema'] = prob_match.group(1).strip('*_').strip()
+
+    # Buscar fecha (YYYY-MM-DD)
+    fecha_match = re.search(r'(?:Fecha|fecha|Date)[:]*\s*(?:[^0-9]*)?(\d{4}-\d{2}-\d{2})', respuesta)
+    if fecha_match:
+        datos['fecha'] = fecha_match.group(1).strip()
+
+    # Buscar hora (HH:MM)
+    hora_match = re.search(r'(?:Hora|hora|Horario|horario|Time)[:]*\s*(?:[^0-9]*)?(\d{2}:\d{2})', respuesta)
+    if hora_match:
+        datos['hora'] = hora_match.group(1).strip()
+
+    return datos
+
+
 async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
     """
     Detecta si la respuesta contiene un bloque [CITA]...[/CITA].
@@ -115,7 +155,21 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
                 fecha = fecha_match.group(1).strip()
                 hora = hora_match.group(1).strip()
 
-    # Si encontramos datos válidos, procesar
+    # Si NO encontramos tag pero la respuesta parece una confirmación de cita,
+    # intentar extraer datos del resumen (fallback)
+    if not (nombre and telefono_cita and dispositivo and fecha and hora):
+        confirmacion_keywords = ["confirmado", "confirmada", "agendé", "agendada", "listo", "perfecto", "resumen"]
+        if any(kw in respuesta.lower() for kw in confirmacion_keywords):
+            datos_extraidos = await extraer_datos_confirmacion(respuesta)
+            if all(k in datos_extraidos for k in ['nombre', 'telefono', 'dispositivo', 'problema', 'fecha', 'hora']):
+                nombre = datos_extraidos['nombre']
+                telefono_cita = datos_extraidos['telefono']
+                dispositivo = f"{datos_extraidos['dispositivo']} {datos_extraidos['problema']}"
+                fecha = datos_extraidos['fecha']
+                hora = datos_extraidos['hora']
+                logger.info(f"Datos de cita extraídos del resumen: {nombre}")
+
+    # Si encontramos datos válidos (con o sin tag), procesar
     if nombre and telefono_cita and dispositivo and fecha and hora:
         # Limpiar símbolos del teléfono si los tiene
         telefono_cita = re.sub(r'[^\d]', '', telefono_cita)
