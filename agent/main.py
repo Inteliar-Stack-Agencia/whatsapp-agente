@@ -62,40 +62,59 @@ async def health_check():
 async def extraer_datos_confirmacion(respuesta: str) -> dict:
     """
     Extrae datos de una confirmación de cita de la respuesta del bot.
-    Busca patrones como "Nombre:", "Teléfono:", "Dispositivo:", "Fecha:", "Hora:"
+    Busca patrones como "Nombre: Oscar Elias", "Dispositivo: iPhone 14", etc.
+    Ignora símbolos de markdown (*, _, etc.)
     """
     datos = {}
 
-    # Buscar nombre (Nombre:, nombre:, Name:, etc.)
-    nombre_match = re.search(r'(?:Nombre|nombre|Name)[:]*\s*([^:\n]+)', respuesta)
-    if nombre_match:
-        datos['nombre'] = nombre_match.group(1).strip('*_').strip()
+    # Limpiar markdown: remover * y _ alrededor de palabras
+    respuesta_clean = re.sub(r'\*([^*]*)\*', r'\1', respuesta)
+    respuesta_clean = re.sub(r'_([^_]*)_', r'\1', respuesta_clean)
 
-    # Buscar teléfono/contacto
-    tel_match = re.search(r'(?:Teléfono|Contacto|Telefono|telefono|contacto)[:]*\s*([^:\n]+)', respuesta)
+    # Buscar nombre - después de "Nombre:" capturar hasta fin de línea, ignorando emojis
+    nombre_match = re.search(r'Nombre[:\s]*\*?([^:\n*_]+)', respuesta_clean, re.IGNORECASE)
+    if nombre_match:
+        datos['nombre'] = nombre_match.group(1).strip()
+
+    # Buscar teléfono/contacto - capturar números
+    tel_match = re.search(r'(?:Teléfono|Telefono|Contacto)[:\s]*\*?([^\n*_]+)', respuesta_clean, re.IGNORECASE)
     if tel_match:
-        datos['telefono'] = tel_match.group(1).strip('*_').strip()
+        tel_raw = tel_match.group(1).strip()
+        # Extraer solo números del teléfono
+        tel_nums = re.sub(r'[^\d]', '', tel_raw)
+        if tel_nums:
+            datos['telefono'] = tel_nums
 
     # Buscar dispositivo
-    disp_match = re.search(r'(?:Dispositivo|dispositivo|Device)[:]*\s*([^:\n]+)', respuesta)
+    disp_match = re.search(r'Dispositivo[:\s]*\*?([^\n*_]+)', respuesta_clean, re.IGNORECASE)
     if disp_match:
-        datos['dispositivo'] = disp_match.group(1).strip('*_').strip()
+        datos['dispositivo'] = disp_match.group(1).strip()
 
-    # Buscar problema
-    prob_match = re.search(r'(?:Problema|problema|Problem|Issue)[:]*\s*([^:\n]+)', respuesta)
-    if prob_match:
-        datos['problema'] = prob_match.group(1).strip('*_').strip()
+    # Buscar servicio (a veces en lugar de "problema")
+    serv_match = re.search(r'(?:Servicio|Problema)[:\s]*\*?([^\n*_]+)', respuesta_clean, re.IGNORECASE)
+    if serv_match:
+        datos['problema'] = serv_match.group(1).strip()
 
-    # Buscar fecha (YYYY-MM-DD)
-    fecha_match = re.search(r'(?:Fecha|fecha|Date)[:]*\s*(?:[^0-9]*)?(\d{4}-\d{2}-\d{2})', respuesta)
+    # Buscar fecha - buscar "Martes 31 de marzo de 2026" y convertir a YYYY-MM-DD
+    fecha_match = re.search(r'(?:Martes|Lunes|Miércoles|Jueves|Viernes|Sábado|Domingo)\s+(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})', respuesta_clean, re.IGNORECASE)
     if fecha_match:
-        datos['fecha'] = fecha_match.group(1).strip()
+        dia, mes_str, ano = fecha_match.groups()
+        meses = {'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04', 'mayo': '05', 'junio': '06',
+                 'julio': '07', 'agosto': '08', 'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'}
+        mes = meses.get(mes_str.lower(), '01')
+        datos['fecha'] = f"{ano}-{mes}-{dia.zfill(2)}"
+    else:
+        # Intentar formato ISO directo
+        fecha_iso_match = re.search(r'(\d{4}-\d{2}-\d{2})', respuesta_clean)
+        if fecha_iso_match:
+            datos['fecha'] = fecha_iso_match.group(1)
 
     # Buscar hora (HH:MM)
-    hora_match = re.search(r'(?:Hora|hora|Horario|horario|Time)[:]*\s*(?:[^0-9]*)?(\d{2}:\d{2})', respuesta)
+    hora_match = re.search(r'(?:Hora|Horario)[:\s]*\*?(\d{2}:\d{2})', respuesta_clean, re.IGNORECASE)
     if hora_match:
         datos['hora'] = hora_match.group(1).strip()
 
+    logger.info(f"Datos extraídos del resumen: {datos}")
     return datos
 
 
@@ -158,16 +177,18 @@ async def procesar_cita_si_existe(respuesta: str, telefono: str) -> str:
     # Si NO encontramos tag pero la respuesta parece una confirmación de cita,
     # intentar extraer datos del resumen (fallback)
     if not (nombre and telefono_cita and dispositivo and fecha and hora):
-        confirmacion_keywords = ["confirmado", "confirmada", "agendé", "agendada", "listo", "perfecto", "resumen"]
-        if any(kw in respuesta.lower() for kw in confirmacion_keywords):
+        confirmacion_keywords = ["confirmado", "confirmada", "agendé", "agendada", "listo", "perfecto", "resumen", "agendada exitosamente", "cita ha sido agendada"]
+        if any(kw in respuesta.lower() for kw in confirmacion_keywords) or "Nombre:" in respuesta:
             datos_extraidos = await extraer_datos_confirmacion(respuesta)
+            logger.info(f"Intentando fallback extraction: {datos_extraidos}")
+            # Aceptar si tenemos al menos nombre, teléfono, dispositivo, fecha, hora
             if all(k in datos_extraidos for k in ['nombre', 'telefono', 'dispositivo', 'problema', 'fecha', 'hora']):
                 nombre = datos_extraidos['nombre']
                 telefono_cita = datos_extraidos['telefono']
                 dispositivo = f"{datos_extraidos['dispositivo']} {datos_extraidos['problema']}"
                 fecha = datos_extraidos['fecha']
                 hora = datos_extraidos['hora']
-                logger.info(f"Datos de cita extraídos del resumen: {nombre}")
+                logger.info(f"✓ Datos de cita extraídos del resumen (fallback): {nombre} - {fecha} {hora}")
 
     # Si encontramos datos válidos (con o sin tag), procesar
     if nombre and telefono_cita and dispositivo and fecha and hora:
