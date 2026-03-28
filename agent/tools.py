@@ -132,14 +132,36 @@ async def crear_evento_calendario(nombre: str, telefono: str, dispositivo: str,
                                    fecha: str, hora: str) -> bool:
     """
     Crea un evento en Google Calendar para la cita del cliente.
-    Requiere variables de entorno: GOOGLE_CALENDAR_CREDENTIALS y GOOGLE_CALENDAR_ID
+
+    Soporta 2 modos:
+    1. Una cuenta maestra con múltiples calendarios (RECOMENDADO para vender)
+       - GOOGLE_CALENDAR_CREDENTIALS: credenciales del proveedor (una sola)
+       - calendar_id en config/{agente}/business.yaml por agente
+
+    2. Cada cliente configura su propio
+       - GOOGLE_CALENDAR_CREDENTIALS: credenciales del cliente
+       - GOOGLE_CALENDAR_ID: su calendar ID
+
     Retorna True si fue exitoso, False si no hay credenciales o hubo error.
     """
     credentials_json = os.getenv("GOOGLE_CALENDAR_CREDENTIALS")
-    calendar_id = os.getenv("GOOGLE_CALENDAR_ID")
+
+    # Intentar obtener calendar_id del agente primero (modo multi-calendario)
+    agente = obtener_agente_activo()
+    calendar_id = None
+
+    try:
+        info = cargar_info_negocio()
+        calendar_id = info.get("negocio", {}).get("calendar_id")
+    except:
+        pass
+
+    # Si no está en business.yaml, intentar desde variable de entorno
+    if not calendar_id:
+        calendar_id = os.getenv("GOOGLE_CALENDAR_ID")
 
     if not credentials_json or not calendar_id:
-        logger.warning("Google Calendar no configurado — cita no creada en calendario")
+        logger.warning(f"Google Calendar no configurado para {agente} — cita no creada en calendario")
         return False
 
     try:

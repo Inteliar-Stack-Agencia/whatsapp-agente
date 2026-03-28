@@ -1,4 +1,13 @@
-# Setup: Integración con Google Calendar
+# Setup: Integración con Google Calendar (Modo por Cliente)
+
+⚠️ **NOTA IMPORTANTE:**
+
+Si eres **proveedor** que vende bots a múltiples clientes, usa en cambio:
+→ **[SETUP_MULTI_CLIENT_CALENDAR.md](SETUP_MULTI_CLIENT_CALENDAR.md)** ← RECOMENDADO PARA VENDER
+
+Este documento es para si cada **cliente configura su propia cuenta de Google**.
+
+---
 
 Para que el agente cree citas automáticamente en tu Google Calendar, necesitas seguir estos pasos **UNA VEZ**.
 
