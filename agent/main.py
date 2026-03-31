@@ -294,3 +294,309 @@ async def webhook_handler(request: Request):
     except Exception as e:
         logger.error(f"Error en webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ════════════════════════════════════════════════════════════
+# ENDPOINTS DE PAGO
+# ════════════════════════════════════════════════════════════
+
+@app.post("/register-payment")
+async def register_payment(request: Request):
+    """
+    Registra un pago manual en la tabla pagos de Supabase.
+
+    Body:
+    {
+        "client_id": "uuid",
+        "concepto": "Pago 50% Starter",
+        "monto": 32.50,
+        "metodo_pago": "manual",
+        "estado": "pendiente",
+        "referencia": "TRX-12345" (opcional)
+    }
+    """
+    if not is_supabase_enabled():
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
+    try:
+        from agent.supabase_client import registrar_pago
+
+        body = await request.json()
+        client_id = body.get("client_id")
+        concepto = body.get("concepto")
+        monto = body.get("monto")
+        metodo = body.get("metodo_pago", "manual")
+        referencia = body.get("referencia")
+
+        if not all([client_id, concepto, monto]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        success = await registrar_pago(
+            client_id=client_id,
+            concepto=concepto,
+            monto=float(monto),
+            metodo_pago=metodo,
+            referencia=referencia
+        )
+
+        if success:
+            return {"status": "ok", "message": "Payment registered"}
+        else:
+            raise HTTPException(status_code=500, detail="Error registering payment")
+
+    except Exception as e:
+        logger.error(f"Error registering payment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/checkout/mercado-pago")
+async def checkout_mercado_pago(request: Request):
+    """
+    Crea un checkout de Mercado Pago.
+
+    Body:
+    {
+        "client_id": "uuid",
+        "concepto": "Pago 50% Starter",
+        "monto": 32.50
+    }
+
+    Response:
+    {
+        "checkout_url": "https://www.mercadopago.com/checkout/v1/..."
+    }
+    """
+    if not is_supabase_enabled():
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
+    try:
+        import mercadopago
+
+        mp_access_token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+        if not mp_access_token:
+            raise HTTPException(status_code=503, detail="Mercado Pago not configured")
+
+        body = await request.json()
+        client_id = body.get("client_id")
+        concepto = body.get("concepto")
+        monto = float(body.get("monto", 0))
+
+        if not all([client_id, concepto, monto]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        # Crear cliente de Mercado Pago
+        sdk = mercadopago.SDK(mp_access_token)
+
+        # Crear preferencia de pago
+        preference_data = {
+            "items": [
+                {
+                    "id": client_id,
+                    "title": concepto,
+                    "quantity": 1,
+                    "unit_price": monto
+                }
+            ],
+            "back_urls": {
+                "success": f"{os.getenv('APP_URL', 'http://localhost:8000')}/payment-success",
+                "failure": f"{os.getenv('APP_URL', 'http://localhost:8000')}/payment-failure",
+                "pending": f"{os.getenv('APP_URL', 'http://localhost:8000')}/payment-pending"
+            },
+            "notification_url": f"{os.getenv('APP_URL', 'http://localhost:8000')}/webhooks/mercado-pago",
+            "external_reference": client_id,
+            "auto_return": "approved"
+        }
+
+        preference_response = sdk.preference().create(preference_data)
+
+        if preference_response["status"] == 201:
+            checkout_url = preference_response["response"]["init_point"]
+            logger.info(f"Mercado Pago checkout created for {client_id}: {checkout_url}")
+            return {"checkout_url": checkout_url}
+        else:
+            logger.error(f"Mercado Pago error: {preference_response}")
+            raise HTTPException(status_code=500, detail="Error creating checkout")
+
+    except Exception as e:
+        logger.error(f"Error creating Mercado Pago checkout: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/webhooks/mercado-pago")
+async def webhook_mercado_pago(request: Request):
+    """
+    Webhook de Mercado Pago que confirma el pago.
+    """
+    if not is_supabase_enabled():
+        return {"status": "ok"}
+
+    try:
+        from agent.supabase_client import registrar_pago, obtener_cliente_por_id
+
+        body = await request.json()
+
+        # Tipos de notificación: payment, plan, subscription, invoice
+        tipo = body.get("type")
+        dato = body.get("data", {})
+
+        if tipo == "payment":
+            payment_id = dato.get("id")
+
+            # Obtener detalles del pago de Mercado Pago
+            import mercadopago
+            mp_access_token = os.getenv("MERCADO_PAGO_ACCESS_TOKEN")
+            if not mp_access_token:
+                return {"status": "ok"}
+
+            sdk = mercadopago.SDK(mp_access_token)
+            payment_response = sdk.payment().get(payment_id)
+
+            if payment_response["status"] == 200:
+                payment = payment_response["response"]
+
+                # payment.status: pending, approved, authorized, in_process, in_mediation, rejected, cancelled, refunded, charge_back
+                if payment["status"] == "approved":
+                    client_id = payment.get("external_reference")
+
+                    if client_id:
+                        # Registrar pago en Supabase
+                        concepto = f"Pago via Mercado Pago (ID: {payment_id})"
+                        monto = payment.get("transaction_amount", 0)
+
+                        await registrar_pago(
+                            client_id=client_id,
+                            concepto=concepto,
+                            monto=monto,
+                            metodo_pago="mercado-pago",
+                            referencia=str(payment_id)
+                        )
+
+                        logger.info(f"Mercado Pago payment confirmed for {client_id}: ${monto}")
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        logger.error(f"Error processing Mercado Pago webhook: {e}")
+        return {"status": "ok"}  # MP espera status 200
+
+
+@app.post("/checkout/stripe")
+async def checkout_stripe(request: Request):
+    """
+    Crea una session de checkout de Stripe.
+
+    Body:
+    {
+        "client_id": "uuid",
+        "concepto": "Pago 50% Starter",
+        "monto": 32.50
+    }
+
+    Response:
+    {
+        "checkout_url": "https://checkout.stripe.com/pay/cs_..."
+    }
+    """
+    if not is_supabase_enabled():
+        raise HTTPException(status_code=503, detail="Supabase not configured")
+
+    try:
+        import stripe
+
+        stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        if not stripe_key:
+            raise HTTPException(status_code=503, detail="Stripe not configured")
+
+        stripe.api_key = stripe_key
+
+        body = await request.json()
+        client_id = body.get("client_id")
+        concepto = body.get("concepto")
+        monto = float(body.get("monto", 0))
+
+        if not all([client_id, concepto, monto]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        # Crear session de Stripe
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "usd",
+                        "product_data": {
+                            "name": concepto,
+                        },
+                        "unit_amount": int(monto * 100),  # Stripe usa centavos
+                    },
+                    "quantity": 1,
+                }
+            ],
+            mode="payment",
+            success_url=f"{os.getenv('APP_URL', 'http://localhost:8000')}/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{os.getenv('APP_URL', 'http://localhost:8000')}/payment-failure",
+            metadata={"client_id": client_id, "concepto": concepto}
+        )
+
+        logger.info(f"Stripe checkout created for {client_id}: {session.id}")
+        return {"checkout_url": session.url}
+
+    except Exception as e:
+        logger.error(f"Error creating Stripe checkout: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/webhooks/stripe")
+async def webhook_stripe(request: Request):
+    """
+    Webhook de Stripe que confirma el pago.
+    """
+    if not is_supabase_enabled():
+        return {"status": "ok"}
+
+    try:
+        from agent.supabase_client import registrar_pago
+        import stripe
+
+        body = await request.text()
+        sig_header = request.headers.get("stripe-signature")
+
+        stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+        if not all([stripe_key, endpoint_secret]):
+            return {"status": "ok"}
+
+        stripe.api_key = stripe_key
+
+        try:
+            event = stripe.Webhook.construct_event(body, sig_header, endpoint_secret)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        except stripe.error.SignatureVerificationError:
+            raise HTTPException(status_code=400, detail="Invalid signature")
+
+        if event["type"] == "checkout.session.completed":
+            session = event["data"]["object"]
+
+            if session["payment_status"] == "paid":
+                client_id = session.get("metadata", {}).get("client_id")
+                concepto = session.get("metadata", {}).get("concepto")
+                monto = session.get("amount_total", 0) / 100  # Stripe usa centavos
+
+                if client_id:
+                    await registrar_pago(
+                        client_id=client_id,
+                        concepto=concepto or "Pago via Stripe",
+                        monto=monto,
+                        metodo_pago="stripe",
+                        referencia=session.get("id")
+                    )
+
+                    logger.info(f"Stripe payment confirmed for {client_id}: ${monto}")
+
+        return {"status": "ok"}
+
+    except Exception as e:
+        logger.error(f"Error processing Stripe webhook: {e}")
+        return {"status": "ok"}

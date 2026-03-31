@@ -11,3 +11,5 @@ google-auth>=2.25.0
 google-auth-httplib2>=0.2.0
 google-api-python-client>=2.110.0
 supabase>=2.0.0
+mercado-pago>=4.0.0
+stripe>=5.0.0

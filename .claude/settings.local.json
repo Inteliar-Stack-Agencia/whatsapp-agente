@@ -23,7 +23,9 @@
       "Bash(cat:*)",
       "WebFetch(domain:github.com)",
       "mcp__claude_ai_Supabase__list_tables",
-      "mcp__claude_ai_Supabase__apply_migration"
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(npm run:*)",
+      "WebFetch(domain:dash.cloudflare.com)"
     ]
   }
 }
