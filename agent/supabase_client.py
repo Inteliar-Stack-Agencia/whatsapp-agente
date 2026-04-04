@@ -31,6 +31,40 @@ def is_supabase_enabled() -> bool:
     return supabase_client is not None
 
 
+async def registrar_lead_si_nuevo(client_id: str, telefono: str, primer_mensaje: str = None):
+    """
+    Registra un contacto nuevo en bot_leads si su teléfono no existe aún.
+    Se llama en cada mensaje entrante — solo inserta si es la primera vez.
+
+    Args:
+        client_id: UUID del cliente (negocio)
+        telefono: Número del contacto (usuario final)
+        primer_mensaje: Primer mensaje enviado (opcional)
+    """
+    if not is_supabase_enabled():
+        return
+
+    try:
+        # Verificar si ya existe
+        existente = supabase_client.table("bot_leads").select("id").eq(
+            "client_id", client_id
+        ).eq("phone", telefono).limit(1).execute()
+
+        if existente.data and len(existente.data) > 0:
+            return  # Ya registrado — no duplicar
+
+        # Registrar como nuevo lead
+        supabase_client.table("bot_leads").insert({
+            "client_id": client_id,
+            "phone": telefono,
+            "message": primer_mensaje,
+        }).execute()
+        logger.info(f"Nuevo lead registrado: {telefono} para cliente {client_id}")
+
+    except Exception as e:
+        logger.error(f"Error registrando lead {telefono}: {e}")
+
+
 async def obtener_config_cliente(client_id: str) -> dict:
     """
     Lee la configuración del bot desde la tabla ai_prompts en Supabase.

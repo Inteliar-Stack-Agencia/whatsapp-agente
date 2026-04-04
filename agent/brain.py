@@ -22,7 +22,10 @@ load_dotenv()
 logger = logging.getLogger("agentkit")
 
 # Cliente de Anthropic
-client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Soporta ANTHROPIC_API_KEY o CLAVE_API_ANTRÓPICA (Railway en español)
+client = AsyncAnthropic(
+    api_key=os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAVE_API_ANTRÓPICA") or os.getenv("CLAVE_API_ANTROPICA")
+)
 
 
 def cargar_config_prompts_local() -> dict:
