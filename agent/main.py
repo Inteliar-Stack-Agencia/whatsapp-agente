@@ -18,7 +18,7 @@ from agent.brain import generar_respuesta
 from agent.memory import inicializar_db, guardar_mensaje, obtener_historial
 from agent.providers import obtener_proveedor
 from agent.tools import crear_evento_calendario, detectar_tipo_pregunta, crear_ticket_desde_cita, buscar_estado_reparacion
-from agent.supabase_client import obtener_cliente_por_telefono, is_supabase_enabled
+from agent.supabase_client import is_supabase_enabled, registrar_lead_si_nuevo
 from agent.admin import admin_router
 
 load_dotenv()
@@ -32,6 +32,9 @@ logger = logging.getLogger("agentkit")
 # Proveedor de WhatsApp (se configura en .env con WHATSAPP_PROVIDER)
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
+
+# ID del cliente en Supabase — identifica a qué negocio pertenece este bot
+CLIENT_ID = os.getenv("CLIENT_ID")
 
 
 @asynccontextmanager
@@ -261,15 +264,15 @@ async def webhook_handler(request: Request):
 
             logger.info(f"Mensaje de {msg.telefono}: {msg.texto}")
 
-            # Obtener el cliente de Supabase si está disponible
-            client_id = None
+            # Obtener client_id: primero desde .env, si no hay, advertir
+            client_id = CLIENT_ID
             if is_supabase_enabled():
-                cliente = await obtener_cliente_por_telefono(msg.telefono)
-                client_id = cliente.get("id") if cliente else None
                 if client_id:
-                    logger.info(f"Cliente encontrado: {cliente.get('name')} ({client_id})")
+                    logger.info(f"Usando CLIENT_ID configurado: {client_id}")
+                    # Registrar contacto en bot_leads si es nuevo
+                    await registrar_lead_si_nuevo(client_id, msg.telefono, msg.texto)
                 else:
-                    logger.warning(f"Cliente no encontrado para teléfono {msg.telefono}")
+                    logger.warning("CLIENT_ID no configurado en .env — conversaciones no se guardarán en Supabase")
 
             # Obtener historial ANTES de guardar el mensaje actual
             historial = await obtener_historial(msg.telefono, client_id=client_id)
