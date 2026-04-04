@@ -33,8 +33,8 @@ logger = logging.getLogger("agentkit")
 proveedor = obtener_proveedor()
 PORT = int(os.getenv("PORT", 8000))
 
-# ID del cliente en Supabase — identifica a qué negocio pertenece este bot
-CLIENT_ID = os.getenv("CLIENT_ID")
+# ID del cliente en Supabase — soporta CLIENT_ID o ID_DE_CLIENTE (Railway en español)
+CLIENT_ID = os.getenv("CLIENT_ID") or os.getenv("ID_DE_CLIENTE")
 
 
 @asynccontextmanager
