@@ -239,8 +239,7 @@ CLIENTE RENUEVA o PAGA EXTRAS
 ### Seguridad:
 - ✅ API keys en .env (nunca en GitHub)
 - ✅ RLS habilitado en Supabase
-- ✅ `/admin` protegido con password
-- ⚠️ Cambiar ADMIN_PASSWORD antes de producción
+- ✅ `/admin` protegido con password (obligatoria, sin default) y sesión por token aleatorio
 
 ---
 

@@ -257,7 +257,7 @@ WHAPI_TOKEN=...
 SUPABASE_URL=https://xeqbapfjosgchkhqwzsh.supabase.co
 SUPABASE_KEY=eyJhbGc...
 
-ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=tu-contraseña-fuerte-aqui  # obligatoria, sin default
 AGENTE_ACTIVO=mundo-electronico  # Para fallback local si quieren
 ```
 
@@ -289,7 +289,7 @@ AGENTE_ACTIVO=mundo-electronico  # Para fallback local si quieren
 
 ## Seguridad
 
-- `/admin` protegido con contraseña simple (cambiar en ADMIN_PASSWORD)
+- `/admin` protegido con contraseña (`ADMIN_PASSWORD`, obligatoria) y sesión por token aleatorio, no la contraseña en texto plano
 - Supabase con RLS enabled pero permisivo (solo admin puede acceder)
 - Tokens en .env (NUNCA a GitHub)
 - Service Role Key en SUPABASE_KEY (acceso total a la DB)

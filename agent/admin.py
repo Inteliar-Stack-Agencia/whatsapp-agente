@@ -8,6 +8,7 @@ Lee y escribe en Supabase directamente.
 """
 
 import os
+import secrets
 import logging
 from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException, Form
@@ -18,14 +19,39 @@ logger = logging.getLogger("agentkit")
 
 admin_router = APIRouter()
 
-# Contraseña admin (cambiar en .env: ADMIN_PASSWORD)
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+# Contraseña admin (definir en .env: ADMIN_PASSWORD). Sin default inseguro:
+# si falta, el proceso no arranca en vez de exponer /admin con "admin123".
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    raise RuntimeError(
+        "ADMIN_PASSWORD no está configurada. Definila en el entorno antes de "
+        "iniciar el servicio — /admin no debe correr con una contraseña por defecto."
+    )
+
+# Tokens de sesión válidos, generados al loguearse (nunca es la contraseña en
+# texto plano). Vive en memoria: un solo worker uvicorn (ver Dockerfile), y
+# reiniciar el proceso simplemente cierra las sesiones activas.
+_sesiones_validas: set[str] = set()
 
 
 def verificar_sesion(request: Request) -> bool:
     """Verifica si el usuario tiene sesión admin válida."""
     session_cookie = request.cookies.get("admin_session")
-    return session_cookie == ADMIN_PASSWORD
+    return bool(session_cookie) and session_cookie in _sesiones_validas
+
+
+def crear_sesion() -> str:
+    """Genera un token de sesión nuevo, aleatorio, no relacionado con la contraseña."""
+    token = secrets.token_urlsafe(32)
+    _sesiones_validas.add(token)
+    return token
+
+
+def set_session_cookie(response, token: str) -> None:
+    response.set_cookie(
+        "admin_session", token, max_age=604800,  # 7 días
+        httponly=True, secure=True, samesite="lax",
+    )
 
 
 async def obtener_todos_los_tickets() -> list[dict]:
@@ -542,21 +568,19 @@ async def dashboard(request: Request):
         """
         return HTMLResponse(html_login)
 
-    # Obtener tickets y mostrar dashboard
+    # Obtener tickets y mostrar dashboard (la sesión ya es válida, no hace
+    # falta reemitir la cookie en cada vista)
     tickets = await obtener_todos_los_tickets()
     html = generar_html_dashboard(tickets)
-
-    response = HTMLResponse(html)
-    response.set_cookie("admin_session", ADMIN_PASSWORD, max_age=604800)  # 7 días
-    return response
+    return HTMLResponse(html)
 
 
 @admin_router.post("/admin/login")
 async def admin_login(request: Request, password: str = Form(...)):
     """Valida la contraseña y crea sesión."""
-    if password == ADMIN_PASSWORD:
+    if secrets.compare_digest(password, ADMIN_PASSWORD):
         response = RedirectResponse(url="/admin", status_code=302)
-        response.set_cookie("admin_session", ADMIN_PASSWORD, max_age=604800)
+        set_session_cookie(response, crear_sesion())
         return response
     else:
         raise HTTPException(status_code=401, detail="Contraseña incorrecta")

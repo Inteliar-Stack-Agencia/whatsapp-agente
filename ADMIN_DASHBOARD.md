@@ -14,9 +14,9 @@ Una interfaz web donde el dueño del negocio puede:
 
 **URL:** `https://tu-app.railway.app/admin`
 
-**Contraseña:** Definida en `ADMIN_PASSWORD` (default: `admin123`)
+**Contraseña:** Definida en `ADMIN_PASSWORD`. Obligatoria — el servicio no arranca sin ella, no hay default.
 
-Cambiar en `.env`:
+Definir en `.env`:
 ```env
 ADMIN_PASSWORD=tu-contraseña-segura
 ```
@@ -127,13 +127,13 @@ El dashboard tiene:
 - Incluir router: `app.include_router(admin_router)`
 
 ### .env
-- Nueva variable: `ADMIN_PASSWORD=admin123`
+- Nueva variable obligatoria: `ADMIN_PASSWORD` (sin default — el servicio no arranca sin ella)
 
 ## Deploy a producción
 
 En Railway ya está incluido. Solo:
 
-1. Cambiar contraseña en Railway variables:
+1. Configurar la contraseña en Railway variables:
    ```
    ADMIN_PASSWORD = tu-contraseña-fuerte-aqui
    ```
